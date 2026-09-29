@@ -1,0 +1,29 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run typecheck
+      - run: bun run build
+      - run: bun run test
+      - name: scaffold smoke test
+        run: |
+          cd /tmp && node $GITHUB_WORKSPACE/packages/create-light-dapp/bin/index.js smoke-app --network=testnet --dao=y
+          test -f smoke-app/src/pages/Dao.tsx
+  e2e:
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run build
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: playwright-report, path: e2e/playwright-report }

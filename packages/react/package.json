@@ -1,0 +1,30 @@
+{
+  "name": "@light-dapp-kit/react",
+  "version": "0.1.0",
+  "description": "React provider and hooks for running a CCC dApp on the in-browser CKB light client.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "@light-dapp-kit/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@ckb-ccc/connector-react": ">=1.0.0",
+    "@ckb-ccc/core": ">=1.0.0",
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@ckb-ccc/connector-react": "^1.23.0",
+    "@ckb-ccc/core": "^1.23.0",
+    "@types/react": "^18.3.0",
+    "react": "^18.3.0"
+  }
+}

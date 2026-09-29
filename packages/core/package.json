@@ -1,0 +1,26 @@
+{
+  "name": "@light-dapp-kit/core",
+  "version": "0.1.0",
+  "description": "A ccc.Client backed by the CKB light client running in the browser (WASM). No RPC server needed.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "ckb-light-client-js": "1.0.3"
+  },
+  "peerDependencies": {
+    "@ckb-ccc/core": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@ckb-ccc/core": "^1.23.0"
+  },
+  "keywords": ["ckb", "nervos", "light-client", "ccc", "wasm"]
+}

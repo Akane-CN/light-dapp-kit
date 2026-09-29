@@ -1,0 +1,10 @@
+{
+  "name": "create-light-dapp",
+  "version": "0.1.0",
+  "description": "Scaffold a CCC dApp that runs the CKB light client in the browser. `bun create light-dapp my-app`",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "create-light-dapp": "./bin/index.js" },
+  "files": ["bin", "templates"],
+  "scripts": { "build": "echo 'no build step'", "test": "node --test" }
+}

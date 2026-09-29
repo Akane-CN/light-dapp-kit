@@ -1,0 +1,16 @@
+name: Deploy light-wallet to GitHub Pages
+on: { push: { branches: [main] } }
+permissions: { contents: read, pages: write, id-token: write }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: { name: github-pages }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run build
+      - run: bun run --cwd apps/light-wallet build
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: apps/light-wallet/dist }
+      - uses: actions/deploy-pages@v4
