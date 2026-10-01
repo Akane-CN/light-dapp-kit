@@ -10,7 +10,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "dev": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
@@ -22,7 +22,7 @@
     "react": ">=18"
   },
   "devDependencies": {
-    "@ckb-ccc/connector-react": "^1.23.0",
+    "@ckb-ccc/connector-react": "^2.2.2",
     "@ckb-ccc/core": "^1.23.0",
     "@types/react": "^18.3.0",
     "react": "^18.3.0"

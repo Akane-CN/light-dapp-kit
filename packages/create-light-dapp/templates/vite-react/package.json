@@ -8,7 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ckb-ccc/connector-react": "^1.23.0",
+    "@ckb-ccc/connector-react": "^2.2.2",
     "@ckb-ccc/core": "^1.23.0",
     "@light-dapp-kit/react": "^0.1.0",
     "react": "^18.3.1",

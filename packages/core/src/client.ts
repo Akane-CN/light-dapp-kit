@@ -1,5 +1,5 @@
 import { ccc } from "@ckb-ccc/core";
-import { LightClient, randomSecretKey } from "ckb-light-client-js";
+import { LightClient, LightClientSetScriptsCommand, randomSecretKey } from "ckb-light-client-js";
 import { buildLightClientToml, resolveNetwork, type NetworkConfig, type NetworkName } from "./config.js";
 import { SyncMachine, type SyncState } from "./sync.js";
 import { WatchList, type WatchEntry } from "./watch.js";
@@ -21,9 +21,14 @@ export interface LightClientOptions {
  * transaction helpers come for free; only the methods that would hit JSON-RPC are
  * overridden and forwarded to `ckb-light-client-js`.
  *
- * NOTE(M1): method names/signatures below target @ckb-ccc/core 1.x. Verify each
- * override against the installed version with `bun run typecheck`; the adapter
- * contract test (client.test.ts) must cover every overridden method.
+ * Verified against @ckb-ccc/core 1.23: `ClientJsonRpc` defines the RPC-backed
+ * methods as instance properties (built by `buildSender`), so they must be
+ * overridden as class fields, not as prototype methods. Keep the adapter
+ * contract test (client.test.ts) covering every overridden member.
+ *
+ * `ckb-light-client-js` bundles its own `@ckb-ccc/core@0.1.0-alpha.6`; the
+ * two type graphs are structurally compatible at runtime but not assignable,
+ * so values are cast once at the boundary (see `toLcTx`).
  */
 export class LightClientCccClient extends ccc.ClientPublicTestnet {
   readonly cfg: NetworkConfig;
@@ -132,7 +137,7 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     const entries: WatchEntry[] = this.watches.list();
     await this.lc.setScripts(
       entries.map((e) => ({ script: e.script, scriptType: e.scriptType, blockNumber: e.fromBlock })),
-      "all",
+      LightClientSetScriptsCommand.All,
     );
     await saveMeta(this.cfg.dbName, { watches: this.watches.toJSON() });
     const phase = this.sync.get().phase;
@@ -171,53 +176,83 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
   }
 
   // ---------------------------------------------------- ccc.Client overrides
-  // Each override maps a JSON-RPC-backed method to the light client equivalent.
-  // Methods without a light-client equivalent throw a clear error (see design doc §6).
+  // Each override maps a JSON-RPC-backed member to the light client equivalent.
+  // Members without a light-client equivalent throw a clear error (see design doc §6).
 
-  override async getTip(): Promise<ccc.Num> {
+  override getTip = async (): Promise<ccc.Num> => {
     return BigInt((await this.need().getTipHeader()).number);
-  }
+  };
 
-  override async getTipHeader(): Promise<ccc.ClientBlockHeader> {
+  override getTipHeader = async (): Promise<ccc.ClientBlockHeader> => {
     return (await this.need().getTipHeader()) as unknown as ccc.ClientBlockHeader;
-  }
+  };
 
-  override async getHeaderByHashNoCache(hash: ccc.HexLike): Promise<ccc.ClientBlockHeader | undefined> {
+  override getHeaderByHashNoCache = async (hash: ccc.HexLike): Promise<ccc.ClientBlockHeader | undefined> => {
     return (await this.need().getHeader(hash)) as unknown as ccc.ClientBlockHeader | undefined;
-  }
+  };
 
-  override async sendTransactionNoCache(tx: ccc.TransactionLike): Promise<ccc.Hex> {
+  override getHeaderByNumberNoCache = async (): Promise<ccc.ClientBlockHeader | undefined> => {
+    throw unsupported("getHeaderByNumber");
+  };
+
+  override getBlockByHashNoCache = async (): Promise<ccc.ClientBlock | undefined> => {
+    throw unsupported("getBlockByHash");
+  };
+
+  override getBlockByNumberNoCache = async (): Promise<ccc.ClientBlock | undefined> => {
+    throw unsupported("getBlockByNumber");
+  };
+
+  override sendTransactionNoCache = async (tx: ccc.TransactionLike): Promise<ccc.Hex> => {
     if (this.sync.get().phase !== "ready") {
       throw Object.assign(new Error("light client not synced"), { code: "NOT_SYNCED" });
     }
-    return this.need().sendTransaction(tx);
-  }
+    return this.need().sendTransaction(toLcTx(tx));
+  };
 
-  override async getTransactionNoCache(txHash: ccc.HexLike): Promise<ccc.ClientTransactionResponse | undefined> {
+  override sendTransactionDry = async (tx: ccc.TransactionLike): Promise<ccc.Num> => {
+    return this.need().estimateCycles(toLcTx(tx));
+  };
+
+  override getTransactionNoCache = async (txHash: ccc.HexLike): Promise<ccc.ClientTransactionResponse | undefined> => {
     const r = await this.need().getTransaction(txHash);
     return r as unknown as ccc.ClientTransactionResponse | undefined;
-  }
+  };
 
-  override async findCellsPagedNoCache(
+  override findCellsPagedNoCache = async (
     key: ccc.ClientIndexerSearchKeyLike,
     order?: "asc" | "desc",
     limit?: ccc.NumLike,
-    after?: ccc.Hex,
-  ): Promise<ccc.ClientFindCellsResponse> {
-    const r = await this.need().getCells(key, order, limit, after);
+    after?: string,
+  ): Promise<ccc.ClientFindCellsResponse> => {
+    const r = await this.need().getCells(key, order, limit, after as ccc.Hex | undefined);
     return r as unknown as ccc.ClientFindCellsResponse;
-  }
+  };
 
-  override async getCellsCapacity(key: ccc.ClientIndexerSearchKeyLike): Promise<ccc.Num> {
+  override getCellsCapacity = async (key: ccc.ClientIndexerSearchKeyLike): Promise<ccc.Num> => {
     return this.need().getCellsCapacity(key);
-  }
+  };
 
-  override async estimateCycles(tx: ccc.TransactionLike): Promise<ccc.Num> {
-    return this.need().estimateCycles(tx);
-  }
+  override estimateCycles = async (tx: ccc.TransactionLike): Promise<ccc.Num> => {
+    return this.need().estimateCycles(toLcTx(tx));
+  };
 
   /** No fee statistics without a full node; return the configured default. */
-  override async getFeeRateStatistics(): Promise<{ mean: ccc.Num; median: ccc.Num }> {
+  override getFeeRateStatistics = async (): Promise<{ mean: ccc.Num; median: ccc.Num }> => {
     return { mean: this.cfg.defaultFeeRate, median: this.cfg.defaultFeeRate };
-  }
+  };
+}
+
+/** Transaction type expected by the bundled light client (its own CCC alpha). */
+type LcTransactionLike = Parameters<LightClient["sendTransaction"]>[0];
+
+function toLcTx(tx: ccc.TransactionLike): LcTransactionLike {
+  return ccc.Transaction.from(tx) as unknown as LcTransactionLike;
+}
+
+function unsupported(method: string): Error {
+  return Object.assign(
+    new Error(`${method} is not available on a light client (no full-node RPC)`),
+    { code: "UNSUPPORTED" },
+  );
 }

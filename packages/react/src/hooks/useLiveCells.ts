@@ -14,12 +14,12 @@ export interface LiveCellsFilter {
 export function useLiveCells(filter: LiveCellsFilter): HookResult<ccc.Cell[]> & { hasMore: boolean; loadMore: () => void } {
   const { client, sync } = useLightClient();
   const [cells, setCells] = useState<ccc.Cell[]>([]);
-  const [cursor, setCursor] = useState<ccc.Hex | undefined>();
+  const [cursor, setCursor] = useState<string | undefined>();
   const [status, setStatus] = useState<HookResult<never>["status"]>("idle");
   const [error, setError] = useState<Error | undefined>();
   const [hasMore, setHasMore] = useState(false);
 
-  const fetchPage = useCallback(async (after?: ccc.Hex, append = false) => {
+  const fetchPage = useCallback(async (after?: string, append = false) => {
     if (!filter.lock) return;
     try {
       await client.watch(filter.lock, "lock");
