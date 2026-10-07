@@ -155,10 +155,13 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
         this.lc.getScripts(),
       ]);
       const headerTip = BigInt(tip.number);
+      // Only peers define the network tip. With no peer (or no proved header yet)
+      // it stays 0 and the phase remains "syncing-headers": a local checkpoint
+      // tip must never be mistaken for a synced chain.
       const networkTip = peers.reduce((m, p) => {
         const n = p.syncState?.provedBestKnownHeader?.number;
         return n !== undefined && BigInt(n) > m ? BigInt(n) : m;
-      }, headerTip);
+      }, 0n);
       const cellTip = scripts.length === 0 ? headerTip : scripts.reduce((m, s) => (s.blockNumber < m ? s.blockNumber : m), headerTip);
 
       this.sync.patch({ headerTip, networkTip, cellTip, peers: peers.length });

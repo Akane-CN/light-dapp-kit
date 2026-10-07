@@ -30,6 +30,8 @@ describe("SyncMachine", () => {
     expect(SyncMachine.derive({ headerTip: 10n, networkTip: 100n, cellTip: 0n })).toBe("syncing-headers");
     expect(SyncMachine.derive({ headerTip: 100n, networkTip: 100n, cellTip: 50n })).toBe("syncing-cells");
     expect(SyncMachine.derive({ headerTip: 100n, networkTip: 101n, cellTip: 99n })).toBe("ready");
+    // No peer has reported a tip yet: never "ready" on the local checkpoint alone.
+    expect(SyncMachine.derive({ headerTip: 100n, networkTip: 0n, cellTip: 100n })).toBe("syncing-headers");
   });
 });
 

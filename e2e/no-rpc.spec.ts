@@ -17,9 +17,19 @@ test("syncs to ready with zero JSON-RPC requests", async ({ page }) => {
   });
   page.on("websocket", (ws) => sockets.push(ws.url()));
 
+  const startedAt = Date.now();
   await page.goto("/?network=testnet");
-  await expect(page.getByRole("status")).toContainText("ready", { timeout: 9 * 60 * 1000 });
+  const status = page.getByRole("status");
+  await expect(status).toContainText("ready", { timeout: 9 * 60 * 1000 });
+  const elapsedMs = Date.now() - startedAt;
 
+  // Capture the sync figures (M1 metric) in the report and the CI log.
+  const text = (await status.textContent()) ?? "";
+  test.info().annotations.push({ type: "first-sync", description: `${elapsedMs} ms — ${text.trim()}` });
+  console.log(`[no-rpc] ready after ${elapsedMs} ms: ${text.trim()}`);
+
+  const peers = Number(/peers\s+(\d+)/.exec(text)?.[1] ?? "0");
+  expect(peers, "ready must come from at least one connected peer").toBeGreaterThan(0);
   expect(sockets.length, "expected at least one P2P websocket").toBeGreaterThan(0);
   expect(rpcLike, "no JSON-RPC requests allowed").toEqual([]);
 });
