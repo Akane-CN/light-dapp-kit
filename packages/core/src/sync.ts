@@ -2,6 +2,7 @@
  * Sync state machine. Mirrors design doc §5.
  *
  * idle → booting → syncing-headers → syncing-cells → ready
+ * (syncing-headers → ready directly when no script is watched)
  *                        ↘ error ↙      ⇅ paused
  * ready → syncing-cells on new block / new watch, then back.
  * error → idle only via reset().
@@ -36,7 +37,8 @@ type Listener = (s: SyncState) => void;
 const TRANSITIONS: Record<SyncPhase, SyncPhase[]> = {
   idle: ["booting"],
   booting: ["syncing-headers", "error"],
-  "syncing-headers": ["syncing-cells", "paused", "error"],
+  // Straight to ready when nothing is watched yet (no cells to index).
+  "syncing-headers": ["syncing-cells", "ready", "paused", "error"],
   "syncing-cells": ["ready", "syncing-headers", "paused", "error"],
   ready: ["syncing-cells", "paused", "error"],
   paused: ["syncing-headers", "syncing-cells", "ready", "error"],

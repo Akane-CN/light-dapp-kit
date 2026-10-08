@@ -26,6 +26,14 @@ describe("SyncMachine", () => {
     expect(m.resumeTarget()).toBe("syncing-cells");
   });
 
+  it("reaches ready straight from syncing-headers when nothing is watched", () => {
+    const m = new SyncMachine();
+    m.transition("booting");
+    m.transition("syncing-headers");
+    m.transition("ready");
+    expect(m.get().phase).toBe("ready");
+  });
+
   it("derives phase from tips", () => {
     expect(SyncMachine.derive({ headerTip: 10n, networkTip: 100n, cellTip: 0n })).toBe("syncing-headers");
     expect(SyncMachine.derive({ headerTip: 100n, networkTip: 100n, cellTip: 50n })).toBe("syncing-cells");
