@@ -18,6 +18,11 @@ export interface NetworkConfig {
   defaultFeeRate: bigint;
   /** Default number of blocks to look back when a script is first watched. */
   defaultWatchDepth: bigint;
+  /**
+   * Absolute block number to start watching from (e.g. the block that funded
+   * the wallet). Overrides `defaultWatchDepth` when set.
+   */
+  watchFromBlock?: bigint;
 }
 
 export const NETWORKS: Record<NetworkName, NetworkConfig> = {

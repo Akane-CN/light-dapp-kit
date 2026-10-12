@@ -1,4 +1,5 @@
-export { LightClientProvider, useLightClientContext } from "./provider.js";
+export { LightClientProvider, useLightClientContext, useSignerOverride } from "./provider.js";
+export { useSigner } from "./hooks/useSigner.js";
 export type { LightClientProviderProps } from "./provider.js";
 export { useLightClient } from "./hooks/useLightClient.js";
 export { useBalance } from "./hooks/useBalance.js";

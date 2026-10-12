@@ -27,3 +27,24 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: playwright-report, path: e2e/playwright-report }
+  # Real testnet wallet flow (balance, DAO list, self-transfer) with a private-key signer.
+  # Runs only on main, where the TESTNET_PRIVATE_KEY secret is available; the spec
+  # skips itself when the secret is missing.
+  e2e-wallet:
+    runs-on: ubuntu-latest
+    needs: unit
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      TESTNET_PRIVATE_KEY: ${{ secrets.TESTNET_PRIVATE_KEY }}
+      TESTNET_FROM_BLOCK: ${{ vars.TESTNET_FROM_BLOCK }}
+      TESTNET_EXPECT_DAO: ${{ vars.TESTNET_EXPECT_DAO }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run build
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run e2e -- wallet.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: playwright-report-wallet, path: e2e/playwright-report }

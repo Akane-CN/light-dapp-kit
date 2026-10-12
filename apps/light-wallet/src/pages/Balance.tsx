@@ -1,9 +1,9 @@
 import { ccc } from "@ckb-ccc/connector-react";
-import { useBalance, useLiveCells } from "@light-dapp-kit/react";
+import { useBalance, useLiveCells, useSigner } from "@light-dapp-kit/react";
 import { useEffect, useState } from "react";
 
 export default function Balance() {
-  const signer = ccc.useSigner();
+  const signer = useSigner();
   const [addr, setAddr] = useState<string>();
   useEffect(() => { void signer?.getRecommendedAddress().then(setAddr); }, [signer]);
   const bal = useBalance(addr);
@@ -14,8 +14,8 @@ export default function Balance() {
   if (!signer) return <p>Connect a wallet to see your balance.</p>;
   return (
     <section>
-      <p style={{ wordBreak: "break-all" }}>{addr}</p>
-      <h2>{bal.data !== undefined ? `${ccc.fixedPointToString(bal.data)} CKB` : "…"} <small>({bal.status})</small></h2>
+      <p data-testid="address" style={{ wordBreak: "break-all" }}>{addr}</p>
+      <h2 data-testid="balance">{bal.data !== undefined ? `${ccc.fixedPointToString(bal.data)} CKB` : "…"} <small>({bal.status})</small></h2>
       <h3>Live cells ({cells.data?.length ?? 0})</h3>
       <ul>
         {cells.data?.map((c) => (

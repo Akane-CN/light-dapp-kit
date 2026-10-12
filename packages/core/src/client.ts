@@ -122,14 +122,23 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
   // ------------------------------------------------------------------ watches
 
   async watch(script: ccc.ScriptLike, scriptType: "lock" | "type" = "lock", fromBlock?: bigint): Promise<void> {
-    const tip = this.sync.get().headerTip;
-    const from = fromBlock ?? (tip > this.cfg.defaultWatchDepth ? tip - this.cfg.defaultWatchDepth : 0n);
+    // Before the first poll tick headerTip is still 0; ask the light client
+    // directly so a watch added early never degrades into a scan from genesis.
+    let tip = this.sync.get().headerTip;
+    if (tip === 0n && this.lc) tip = BigInt((await this.lc.getTipHeader()).number);
+    const from = fromBlock ?? this.defaultWatchStart(tip);
     const changed = this.watches.add({ script, scriptType, fromBlock: from });
     if (changed) await this.pushScripts();
   }
 
   async unwatch(script: ccc.ScriptLike, scriptType: "lock" | "type" = "lock"): Promise<void> {
     if (this.watches.remove({ script, scriptType })) await this.pushScripts();
+  }
+
+  private defaultWatchStart(tip: bigint): bigint {
+    const abs = this.cfg.watchFromBlock;
+    if (abs !== undefined) return abs < tip ? abs : tip;
+    return tip > this.cfg.defaultWatchDepth ? tip - this.cfg.defaultWatchDepth : 0n;
   }
 
   private async pushScripts(): Promise<void> {
@@ -231,6 +240,25 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     const r = await this.need().getCells(key, order, limit, after as ccc.Hex | undefined);
     return r as unknown as ccc.ClientFindCellsResponse;
   };
+
+  /**
+   * The light client has no `get_live_cell`; resolve the cell through the
+   * transaction that created it (known for every watched script). Liveness is
+   * not re-verified, which is fine for CCC's cache fallback on known inputs.
+   */
+  override async getCellLiveNoCache(
+    outPointLike: ccc.OutPointLike,
+    withData?: boolean | null,
+  ): Promise<ccc.Cell | undefined> {
+    const outPoint = ccc.OutPoint.from(outPointLike);
+    const res = await this.getTransactionNoCache(outPoint.txHash);
+    if (!res) return undefined;
+    const index = Number(outPoint.index);
+    const cellOutput = res.transaction.outputs[index];
+    if (!cellOutput) return undefined;
+    const outputData = withData ? (res.transaction.outputsData[index] ?? "0x") : "0x";
+    return ccc.Cell.from({ outPoint, cellOutput, outputData });
+  }
 
   override getCellsCapacity = async (key: ccc.ClientIndexerSearchKeyLike): Promise<ccc.Num> => {
     return this.need().getCellsCapacity(key);

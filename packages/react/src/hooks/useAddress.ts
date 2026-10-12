@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { ccc } from "@ckb-ccc/connector-react";
+import { useSigner } from "./useSigner.js";
 
 /** Resolve the address to query: explicit arg, else the connected signer's recommended address. */
 export function useResolvedAddress(address?: string): string | undefined {
-  const signer = ccc.useSigner();
+  const signer = useSigner();
   const [resolved, setResolved] = useState<string | undefined>(address);
   useEffect(() => {
     if (address) { setResolved(address); return; }

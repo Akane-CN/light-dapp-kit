@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { ccc } from "@ckb-ccc/connector-react";
-import { useSendTransaction } from "@light-dapp-kit/react";
+import { useSendTransaction, useSigner } from "@light-dapp-kit/react";
 
 export default function Send() {
-  const signer = ccc.useSigner();
+  const signer = useSigner();
   const { send, status, txHash, error } = useSendTransaction();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("100");
@@ -22,9 +22,9 @@ export default function Send() {
     <section style={{ display: "grid", gap: 8, maxWidth: 480 }}>
       <input placeholder="Recipient address" value={to} onChange={(e) => setTo(e.target.value)} />
       <input placeholder="Amount (CKB)" value={amount} onChange={(e) => setAmount(e.target.value)} />
-      <button onClick={() => void onSend()} disabled={status === "signing" || status === "broadcasting"}>Send</button>
-      <p>Status: {status}{txHash && <> · tx <code style={{ wordBreak: "break-all" }}>{txHash}</code></>}</p>
-      {error && <p style={{ color: "crimson" }}>{error.message}</p>}
+      <button data-testid="send-submit" onClick={() => void onSend()} disabled={status === "signing" || status === "broadcasting"}>Send</button>
+      <p data-testid="send-status">Status: {status}{txHash && <> · tx <code style={{ wordBreak: "break-all" }}>{txHash}</code></>}</p>
+      {error && <p data-testid="send-error" style={{ color: "crimson" }}>{error.message}</p>}
     </section>
   );
 }

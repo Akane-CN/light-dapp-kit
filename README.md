@@ -33,6 +33,26 @@ bun run dev:wallet      # http://localhost:5173
 3. There must be **zero** HTTP JSON-RPC requests; only `wss://` P2P sockets.
    `bun run e2e` asserts exactly this in headless Chrome.
 
+### Automated wallet flow (testnet)
+
+`e2e/wallet.spec.ts` drives the Balance, Nervos DAO and Send pages with a
+private-key signer instead of a browser wallet, sends a real 100 CKB
+self-transfer over P2P and waits for it to be committed, still with zero
+JSON-RPC. The app only exposes the injection hook when built with
+`VITE_ALLOW_TEST_SIGNER=1` (the e2e web server does); production bundles
+never read it.
+
+```sh
+TESTNET_PRIVATE_KEY=0x…   # a testnet key funded from https://faucet.nervos.org
+TESTNET_FROM_BLOCK=…      # optional: block that funded it, so cell sync starts there
+TESTNET_EXPECT_DAO=1      # optional: require a Nervos DAO deposit to be listed
+bun run e2e -- wallet.spec.ts
+```
+
+CI runs this job on pushes to `main` from the `TESTNET_PRIVATE_KEY` secret and
+the `TESTNET_FROM_BLOCK` / `TESTNET_EXPECT_DAO` repository variables; the spec
+skips itself when the secret is absent. Keep nothing but faucet CKB on that key.
+
 ## Browser requirements
 
 `ckb-light-client-js` uses `SharedArrayBuffer`, so the page must be

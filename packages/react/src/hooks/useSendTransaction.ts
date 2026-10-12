@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useLightClient } from "./useLightClient.js";
+import { useSigner } from "./useSigner.js";
 
 type SendStatus = "idle" | "signing" | "broadcasting" | "pending" | "committed" | "error";
 
@@ -10,7 +11,7 @@ type SendStatus = "idle" | "signing" | "broadcasting" | "pending" | "committed" 
  */
 export function useSendTransaction() {
   const { client, sync } = useLightClient();
-  const signer = ccc.useSigner();
+  const signer = useSigner();
   const [status, setStatus] = useState<SendStatus>("idle");
   const [txHash, setTxHash] = useState<ccc.Hex | undefined>();
   const [error, setError] = useState<Error | undefined>();

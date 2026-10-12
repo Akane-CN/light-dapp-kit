@@ -10,6 +10,7 @@ export default defineConfig({
   use: { baseURL: "http://localhost:4173", headless: true },
   webServer: {
     cwd: repoRoot,
+    env: { ...process.env, VITE_ALLOW_TEST_SIGNER: "1" },
     command: "bun run --cwd apps/light-wallet build && bun run --cwd apps/light-wallet preview --port 4173",
     url: "http://localhost:4173",
     timeout: 120_000,

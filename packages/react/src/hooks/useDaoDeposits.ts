@@ -37,7 +37,7 @@ export function useDaoDeposits(address?: string): HookResult<DaoCell[]> {
           const depositBlock = data.length >= 8 ? ccc.numFromBytes(data.slice(0, 8)) : 0n;
           return { cell, capacity: cell.cellOutput.capacity, depositBlock, isWithdrawing: depositBlock !== 0n };
         });
-        if (alive) setState({ data: cells, status: sync.phase === "ready" ? "ready" : "syncing" });
+        if (alive) setState({ data: cells, status: client.syncState().phase === "ready" ? "ready" : "syncing" });
       } catch (e) {
         if (alive) setState((s) => ({ ...s, status: "error", error: e as Error }));
       }

@@ -21,7 +21,7 @@ export function useBalance(address?: string): HookResult<bigint> {
         const { script } = await ccc.Address.fromString(addr, client);
         await client.watch(script, "lock");
         const cap = await client.getCellsCapacity({ script, scriptType: "lock", scriptSearchMode: "exact" });
-        if (alive) setState({ data: cap, status: sync.phase === "ready" ? "ready" : "syncing" });
+        if (alive) setState({ data: cap, status: client.syncState().phase === "ready" ? "ready" : "syncing" });
       } catch (e) {
         if (alive) setState((s) => ({ ...s, status: "error", error: e as Error }));
       }
