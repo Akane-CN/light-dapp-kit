@@ -15,7 +15,23 @@ Replace your `ccc.Provider` with `LightClientProvider`. Everything else stays.
 
 ## Cross-origin isolation
 
-`SharedArrayBuffer` requires COOP/COEP. Vite dev/preview set the headers; static hosts use `coi-serviceworker`.
+`SharedArrayBuffer` requires a cross-origin-isolated page. Two ways to get there,
+and they are not equivalent:
+
+- `Document-Isolation-Policy: isolate-and-require-corp` (Chromium 137+). Isolates
+  the document only; popups you open keep `window.opener`, so popup-based wallets
+  such as JoyID can post their result back. Prefer this.
+- `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp`
+  (every browser). Puts cross-origin popups in a separate browsing context group:
+  the popup sees `opener === null`, the opener sees `popup.closed === true`, and
+  `@ckb-ccc/joy-id` fails with "Popup closed". Extension wallets are unaffected.
+
+The template's `vite.config.ts` sends DIP to Chromium 137+ and COOP/COEP to everything
+else. Static hosts use `coi-serviceworker`, which currently only emits COOP/COEP.
+
+Verified empirically (Chrome 153, headless): COOP/COEP → `crossOriginIsolated`
+true, JoyID opener null; DIP → `crossOriginIsolated` true, opener present;
+`COOP: same-origin-allow-popups` → not isolated, light client cannot start.
 
 ## Known issues
 

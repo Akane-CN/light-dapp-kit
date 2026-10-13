@@ -7,3 +7,5 @@ e2e/test-results
 e2e/playwright-report
 apps/light-wallet/dist
 *.tsbuildinfo
+test-results
+playwright-report

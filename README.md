@@ -56,14 +56,24 @@ skips itself when the secret is absent. Keep nothing but faucet CKB on that key.
 ## Browser requirements
 
 `ckb-light-client-js` uses `SharedArrayBuffer`, so the page must be
-cross-origin isolated (`Cross-Origin-Opener-Policy: same-origin`,
-`Cross-Origin-Embedder-Policy: require-corp`). Vite dev server sets these
-headers in `vite.config.ts`; static hosts that cannot set headers (GitHub Pages)
-use [`coi-serviceworker`](https://github.com/gzuidhof/coi-serviceworker), which
-the template ships in `public/`.
+cross-origin isolated. How that is achieved matters for wallets:
 
-Desktop Chrome / Firefox are supported. Safari and mobile browsers are out of
-scope for v0.
+| Browser | Header sent by Vite dev/preview | Light client | Popup wallets (JoyID) |
+| --- | --- | --- | --- |
+| Chromium 137+ (Chrome, Edge, Brave) | `Document-Isolation-Policy: isolate-and-require-corp` | works | work: the popup keeps `window.opener` |
+| Firefox, Safari, older Chromium | `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` | works | fail with "Popup closed": COOP severs the opener of cross-origin popups |
+
+Extension wallets (MetaMask, OKX, UniSat, UTXO Global) inject a provider and are
+unaffected either way. The header choice lives in `vite.config.ts`
+(`isolationHeaders()`), keyed on the User-Agent.
+
+Static hosts that cannot set headers (GitHub Pages) use
+[`coi-serviceworker`](https://github.com/gzuidhof/coi-serviceworker), which the
+template ships in `public/`. It only emits COOP/COEP, so on GitHub Pages JoyID
+cannot connect yet; teaching it to emit `Document-Isolation-Policy` on Chromium
+is an M3 item.
+
+Desktop Chromium is the primary target for v0. Mobile browsers are out of scope.
 
 ## Status
 

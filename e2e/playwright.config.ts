@@ -5,9 +5,16 @@ import path from "node:path";
 const repoRoot = path.resolve(__dirname, "..");
 export default defineConfig({
   testDir: ".",
+  outputDir: "./test-results",
+  reporter: [["list"], ["html", { outputFolder: "./playwright-report", open: "never" }]],
   timeout: 10 * 60 * 1000,
   retries: 0,
-  use: { baseURL: "http://localhost:4173", headless: true },
+  use: {
+    baseURL: "http://localhost:4173",
+    headless: true,
+    // Point at a pre-installed Chromium instead of Playwright's own download (optional).
+    ...(process.env.PW_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.PW_CHROMIUM_PATH } } : {}),
+  },
   webServer: {
     cwd: repoRoot,
     env: { ...process.env, VITE_ALLOW_TEST_SIGNER: "1" },
