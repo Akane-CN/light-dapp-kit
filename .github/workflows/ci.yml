@@ -28,14 +28,15 @@ jobs:
         if: always()
         with: { name: playwright-report, path: e2e/playwright-report }
   # Real testnet wallet flow (balance, DAO list, self-transfer) with a private-key signer.
-  # Runs only on main, where the TESTNET_PRIVATE_KEY secret is available; the spec
-  # skips itself when the secret is missing.
+  # Runs only on main. Defaults to the well-known public testnet key (0xee…ee) that
+  # the CKB community shares for testing; set the TESTNET_PRIVATE_KEY secret to use
+  # a dedicated one. The spec tops the address up from the faucet when it runs low.
   e2e-wallet:
     runs-on: ubuntu-latest
     needs: unit
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
-      TESTNET_PRIVATE_KEY: ${{ secrets.TESTNET_PRIVATE_KEY }}
+      TESTNET_PRIVATE_KEY: ${{ secrets.TESTNET_PRIVATE_KEY || '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' }}
       TESTNET_FROM_BLOCK: ${{ vars.TESTNET_FROM_BLOCK }}
       TESTNET_EXPECT_DAO: ${{ vars.TESTNET_EXPECT_DAO }}
     steps:
