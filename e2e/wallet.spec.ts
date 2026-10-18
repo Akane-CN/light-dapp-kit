@@ -18,6 +18,9 @@ const FAUCET_URL = process.env.TESTNET_FAUCET_URL ?? "https://faucet.nervos.org/
 const MIN_BALANCE_CKB = 500n;
 /** 100 CKB transfer + 61 CKB change + fee must be visible to the light client. */
 const MIN_VISIBLE_CKB = 200;
+/** If the address has been idle longer than this, create a fresh cell so the scan stays short. */
+const MAX_IDLE_BLOCKS = 2000n;
+const FIXTURE_TRANSFER_CKB = "1000";
 const ONE_CKB = ccc.fixedPointFrom("1");
 
 /**
@@ -25,7 +28,7 @@ const ONE_CKB = ccc.fixedPointFrom("1");
  * faucet when it runs low, and find the block of its latest activity so the light
  * client only has to scan from there. The page under test still makes zero RPC calls.
  */
-async function prepareAddress(address: string): Promise<{ balance: bigint; fromBlock: bigint | undefined }> {
+async function prepareAddress(privateKey: string, address: string): Promise<{ balance: bigint; fromBlock: bigint | undefined }> {
   const rpc = new ccc.ClientPublicTestnet();
   const { script } = await ccc.Address.fromString(address, rpc);
   const key = { script, scriptType: "lock" as const, scriptSearchMode: "exact" as const };
@@ -51,7 +54,24 @@ async function prepareAddress(address: string): Promise<{ balance: bigint; fromB
     console.log(`[wallet] on-chain balance after faucet: ${balance} CKB`);
   }
 
-  const latest = await latestBlock();
+  // The light client scans every block from `fromBlock` to the tip for the watched lock
+  // (measured in CI: 67k idle blocks did not finish in 9 minutes). Keep that range short by
+  // creating a fresh cell when the address has been idle: a self-transfer sent over RPC
+  // from Node, which is fixture setup and not part of what the page under test does.
+  const tip = await rpc.getTip();
+  let latest = await latestBlock();
+  if (latest === undefined || tip - latest > MAX_IDLE_BLOCKS) {
+    console.log(`[wallet] latest activity ${latest === undefined ? "unknown" : `${tip - latest} blocks ago`}; sending a ${FIXTURE_TRANSFER_CKB} CKB self-transfer over RPC as fixture`);
+    const signer = new ccc.SignerCkbPrivateKey(rpc, privateKey);
+    const tx = ccc.Transaction.from({ outputs: [{ lock: script, capacity: ccc.fixedPointFrom(FIXTURE_TRANSFER_CKB) }] });
+    await tx.completeInputsByCapacity(signer);
+    await tx.completeFeeBy(signer);
+    const hash = await signer.sendTransaction(tx);
+    console.log(`[wallet] fixture tx ${hash}; waiting for it to be committed`);
+    const committed = await rpc.waitTransaction(hash, 0, 5 * 60 * 1000);
+    latest = committed?.blockNumber ?? (await latestBlock());
+    console.log(`[wallet] fixture committed at block ${latest ?? "unknown"}`);
+  }
   const fromBlock = latest !== undefined ? (latest > 10n ? latest - 10n : 0n) : undefined;
   console.log(`[wallet] latest activity at block ${latest ?? "unknown"}; light client will watch from ${fromBlock ?? "default depth"}`);
   return { balance, fromBlock };
@@ -64,7 +84,7 @@ test.describe("wallet pages with a private-key signer (testnet)", () => {
     test.setTimeout(20 * 60 * 1000);
     const key = KEY!;
     const expectedAddress = await new ccc.SignerCkbPrivateKey(new ccc.ClientPublicTestnet(), key).getRecommendedAddress();
-    const prepared = await prepareAddress(expectedAddress);
+    const prepared = await prepareAddress(key, expectedAddress);
     expect(prepared.balance, "test address is unfunded and the faucet did not help").toBeGreaterThanOrEqual(MIN_BALANCE_CKB);
     const fromBlock = FROM_BLOCK ?? prepared.fromBlock?.toString();
 
