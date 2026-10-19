@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ccc } from "@ckb-ccc/connector-react";
-import { SyncStatus, useSigner, useSignerOverride } from "@light-dapp-kit/react";
+import { SyncStatus, useLightClientContext, useSigner, useSignerOverride } from "@light-dapp-kit/react";
 import Balance from "./pages/Balance";
 import Send from "./pages/Send";
 // dao-start
@@ -20,6 +20,11 @@ export default function App() {
   const { open, wallet } = ccc.useCcc();
   const signer = useSigner();
   const injected = useSignerOverride() !== undefined;
+  const client = useLightClientContext();
+  // Test-only: expose the client so the e2e suite can read syncState(). Compiled out otherwise.
+  useEffect(() => {
+    if (import.meta.env.VITE_ALLOW_TEST_SIGNER === "1") (window as unknown as { __lightClient?: unknown }).__lightClient = client;
+  }, [client]);
   const [page, setPage] = useState<keyof typeof pages>("Balance");
   const Page = pages[page];
   return (

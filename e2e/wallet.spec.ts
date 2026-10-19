@@ -97,13 +97,31 @@ test.describe("wallet pages with a private-key signer (testnet)", () => {
       }
       void route.continue();
     });
-    page.on("console", (m) => { if (m.type() === "error") console.log(`[browser] ${m.text()}`); });
+    page.on("console", (m) => {
+      const t = m.text();
+      if ((m.type() === "error" || m.type() === "warning") && !/IdentifyProtocol/.test(t)) console.log(`[browser:${m.type()}] ${t.slice(0, 400)}`);
+    });
     await page.addInitScript((k) => { (window as unknown as { __LIGHT_WALLET_TEST_KEY?: string }).__LIGHT_WALLET_TEST_KEY = k; }, key);
 
     const startedAt = Date.now();
     await page.goto(`/?network=testnet${fromBlock ? `&fromBlock=${fromBlock}` : ""}`);
     await expect(page.getByRole("button", { name: "Connected: test signer" })).toBeVisible();
-    await expect(page.getByRole("status").locator("strong")).toHaveText("ready", { timeout: 9 * 60 * 1000 });
+    // Progress trace for CI logs: sync figures every 30 s until ready (or failure).
+    const trace = setInterval(() => {
+      void page
+        .evaluate(() => {
+          const c = (window as unknown as { __lightClient?: { syncState(): Record<string, unknown> } }).__lightClient;
+          const s = c?.syncState();
+          return s ? JSON.stringify(s, (_k, v) => (typeof v === "bigint" ? v.toString() : v)) : "no client";
+        })
+        .then((s) => console.log(`[wallet] +${Math.round((Date.now() - startedAt) / 1000)}s sync ${s}`))
+        .catch(() => {});
+    }, 30_000);
+    try {
+      await expect(page.getByRole("status").locator("strong")).toHaveText("ready", { timeout: 9 * 60 * 1000 });
+    } finally {
+      clearInterval(trace);
+    }
 
     // Balance page (default). The hook reports "(ready)" once cells for the lock are indexed.
     await expect(page.getByTestId("address")).toHaveText(expectedAddress);
