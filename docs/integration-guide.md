@@ -13,6 +13,14 @@ Replace your `ccc.Provider` with `LightClientProvider`. Everything else stays.
 | Custom type script cell deps | node has them | `client.watch(typeScript, "type")` yourself |
 | Fee estimation | `estimate_cycles` | works via light client, falls back to `defaultFeeRate` |
 
+Cell sync is a linear scan of block filters from the watch start block to the
+tip. Measured in CI (GitHub-hosted runner, Chrome headless, testnet): about 600
+blocks per second, so the default 1,000-block look-back costs a couple of
+seconds, 67,000 idle blocks did not finish within 9 minutes, and a scan from
+genesis would take more than 10 hours. Always give `watch()` or
+`watchFromBlock` a start close to the wallet's first activity, and never call
+it with block 0 on a real network.
+
 ## Cross-origin isolation
 
 `SharedArrayBuffer` requires a cross-origin-isolated page. Two ways to get there,

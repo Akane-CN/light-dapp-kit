@@ -40,6 +40,9 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
   private readonly pollIntervalMs: number;
   private readonly logLevel: LightClientOptions["logLevel"];
   private startPromise: Promise<void> | null = null;
+  /** Resolves once the workers are up (`lc` assigned); re-armed by stop(). */
+  private booted!: Promise<void>;
+  private resolveBooted!: () => void;
 
   constructor(opts: LightClientOptions) {
     // Base client still wants a URL; it is never used because every RPC method is overridden.
@@ -47,6 +50,11 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     this.cfg = resolveNetwork(opts.network, opts.config);
     this.pollIntervalMs = opts.pollIntervalMs ?? 2000;
     this.logLevel = opts.logLevel ?? "info";
+    this.armBooted();
+  }
+
+  private armBooted(): void {
+    this.booted = new Promise<void>((resolve) => { this.resolveBooted = resolve; });
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -76,6 +84,7 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     const transport = location.protocol === "https:" ? "wss" : "ws";
     await lc.start({ type: this.cfg.lcType, config: toml }, secret, this.logLevel, transport);
     this.lc = lc;
+    this.resolveBooted();
 
     await saveMeta(this.cfg.dbName, { networkSecretKey: secret, watches: this.watches.toJSON() });
     await this.pushScripts();
@@ -91,6 +100,7 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     await this.lc?.stop();
     this.lc = null;
     this.startPromise = null;
+    this.armBooted();
   }
 
   pause(): void {
@@ -122,10 +132,15 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
   // ------------------------------------------------------------------ watches
 
   async watch(script: ccc.ScriptLike, scriptType: "lock" | "type" = "lock", fromBlock?: bigint): Promise<void> {
-    // Before the first poll tick headerTip is still 0; ask the light client
-    // directly so a watch added early never degrades into a scan from genesis.
+    // Picking a start block needs the light client's tip, so wait for boot. Hooks
+    // commonly call watch() before start() has run (React runs child effects before
+    // the provider's); computing "tip" as 0 here would mean a scan from genesis,
+    // which runs at roughly 600 blocks/s and never finishes on mainnet.
+    if (!this.lc) await this.booted;
+    const lc = this.lc;
+    if (!lc) throw new Error("light client stopped; call start() before watch()");
     let tip = this.sync.get().headerTip;
-    if (tip === 0n && this.lc) tip = BigInt((await this.lc.getTipHeader()).number);
+    if (tip === 0n) tip = BigInt((await lc.getTipHeader()).number);
     const from = fromBlock ?? this.defaultWatchStart(tip);
     const changed = this.watches.add({ script, scriptType, fromBlock: from });
     if (changed) await this.pushScripts();
