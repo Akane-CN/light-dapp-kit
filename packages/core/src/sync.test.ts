@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SyncMachine } from "./sync.js";
 import { WatchList } from "./watch.js";
+import { resolveWatchStart } from "./config.js";
 
 describe("SyncMachine", () => {
   it("walks the happy path", () => {
@@ -56,5 +57,16 @@ describe("WatchList", () => {
   it("round-trips JSON", () => {
     const w = new WatchList([{ script: lock, scriptType: "lock", fromBlock: 7n }]);
     expect(WatchList.fromJSON(w.toJSON()).minFromBlock()).toBe(7n);
+  });
+});
+
+describe("resolveWatchStart", () => {
+  it("uses an explicit start block even when the tip is not known yet", () => {
+    expect(resolveWatchStart(0n, { watchFromBlock: 22888142n, defaultWatchDepth: 1000n })).toBe(22888142n);
+    expect(resolveWatchStart(5n, { watchFromBlock: 22888142n, defaultWatchDepth: 1000n })).toBe(22888142n);
+  });
+  it("counts the default depth back from the tip, never below 0", () => {
+    expect(resolveWatchStart(5000n, { defaultWatchDepth: 1000n })).toBe(4000n);
+    expect(resolveWatchStart(500n, { defaultWatchDepth: 1000n })).toBe(0n);
   });
 });

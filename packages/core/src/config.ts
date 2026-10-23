@@ -60,3 +60,14 @@ export function buildLightClientToml(cfg: NetworkConfig): string | undefined {
   const list = cfg.bootnodes.map((b) => `    "${b}"`).join(",\n");
   return `chain = "${cfg.name}"\n\n[store]\npath = "data/store"\n\n[network]\npath = "data/network"\nlisten_addresses = []\nbootnodes = [\n${list}\n]\nmax_peers = 125\nmax_outbound_peers = 8\nping_interval_secs = 120\nping_timeout_secs = 1200\nconnect_outbound_interval_secs = 15\nupnp = false\ndiscovery_local_address = false\nbootnode_mode = false\n`;
 }
+
+/**
+ * Block to start watching from. An explicit `watchFromBlock` is used as is (the
+ * light client accepts a start above its current tip and simply waits for it);
+ * otherwise count `defaultWatchDepth` back from `tip`, which must be a real,
+ * synced tip (the light client reports block 0 until headers are synced).
+ */
+export function resolveWatchStart(tip: bigint, cfg: Pick<NetworkConfig, "watchFromBlock" | "defaultWatchDepth">): bigint {
+  if (cfg.watchFromBlock !== undefined) return cfg.watchFromBlock;
+  return tip > cfg.defaultWatchDepth ? tip - cfg.defaultWatchDepth : 0n;
+}

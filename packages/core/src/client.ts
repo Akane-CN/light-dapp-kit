@@ -1,6 +1,6 @@
 import { ccc } from "@ckb-ccc/core";
 import { LightClient, LightClientSetScriptsCommand, randomSecretKey } from "ckb-light-client-js";
-import { buildLightClientToml, resolveNetwork, type NetworkConfig, type NetworkName } from "./config.js";
+import { buildLightClientToml, resolveNetwork, resolveWatchStart, type NetworkConfig, type NetworkName } from "./config.js";
 import { SyncMachine, type SyncState } from "./sync.js";
 import { WatchList, type WatchEntry } from "./watch.js";
 import { loadMeta, saveMeta, clearDatabases } from "./storage.js";
@@ -137,11 +137,12 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     // the provider's); computing "tip" as 0 here would mean a scan from genesis,
     // which runs at roughly 600 blocks/s and never finishes on mainnet.
     if (!this.lc) await this.booted;
-    const lc = this.lc;
-    if (!lc) throw new Error("light client stopped; call start() before watch()");
-    let tip = this.sync.get().headerTip;
-    if (tip === 0n) tip = BigInt((await lc.getTipHeader()).number);
-    const from = fromBlock ?? this.defaultWatchStart(tip);
+    if (!this.lc) throw new Error("light client stopped; call start() before watch()");
+    // Counting back from the tip needs a synced tip: right after boot the light
+    // client reports block 0, and a start of 0 would be a scan from genesis.
+    const needsTip = fromBlock === undefined && this.cfg.watchFromBlock === undefined;
+    const tip = needsTip ? await this.tipKnown() : 0n;
+    const from = fromBlock ?? resolveWatchStart(tip, this.cfg);
     const changed = this.watches.add({ script, scriptType, fromBlock: from });
     if (changed) await this.pushScripts();
   }
@@ -150,10 +151,15 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     if (this.watches.remove({ script, scriptType })) await this.pushScripts();
   }
 
-  private defaultWatchStart(tip: bigint): bigint {
-    const abs = this.cfg.watchFromBlock;
-    if (abs !== undefined) return abs < tip ? abs : tip;
-    return tip > this.cfg.defaultWatchDepth ? tip - this.cfg.defaultWatchDepth : 0n;
+  /** Resolves with the header tip once it is known (> 0). */
+  private tipKnown(): Promise<bigint> {
+    const now = this.sync.get().headerTip;
+    if (now > 0n) return Promise.resolve(now);
+    return new Promise((resolve) => {
+      const unsubscribe = this.sync.subscribe((s) => {
+        if (s.headerTip > 0n) { unsubscribe(); resolve(s.headerTip); }
+      });
+    });
   }
 
   private async pushScripts(): Promise<void> {
