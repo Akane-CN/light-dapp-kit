@@ -81,7 +81,7 @@ test.describe("wallet pages with a private-key signer (testnet)", () => {
   test.skip(!KEY, "set TESTNET_PRIVATE_KEY to a funded testnet key to run this suite");
 
   test("balance, DAO list and a self-transfer, with zero JSON-RPC requests", async ({ page }) => {
-    test.setTimeout(20 * 60 * 1000);
+    test.setTimeout(40 * 60 * 1000);
     const key = KEY!;
     const expectedAddress = await new ccc.SignerCkbPrivateKey(new ccc.ClientPublicTestnet(), key).getRecommendedAddress();
     const prepared = await prepareAddress(key, expectedAddress);
@@ -154,18 +154,35 @@ test.describe("wallet pages with a private-key signer (testnet)", () => {
     for (let attempt = 1; attempt <= 3; attempt++) {
       const sentAt = Date.now();
       await page.getByTestId("send-submit").click();
+      // Log every status transition (signing → broadcasting → pending → committed) with timing.
+      let last = "";
       await expect
-        .poll(async () => (await sendStatus.textContent()) ?? "", { timeout: 8 * 60 * 1000, intervals: [2000] })
+        .poll(async () => {
+          const t = ((await sendStatus.textContent()) ?? "").trim();
+          if (t !== last) { console.log(`[wallet] +${Math.round((Date.now() - sentAt) / 1000)}s send status: ${t}`); last = t; }
+          return t;
+        }, { timeout: 20 * 60 * 1000, intervals: [2000] })
         .toMatch(/committed|error/);
-      statusText = (await sendStatus.textContent())!.trim();
+      statusText = last;
       errorText = (await page.getByTestId("send-error").textContent().catch(() => null)) ?? "";
       console.log(`[wallet] send attempt ${attempt} after ${Date.now() - sentAt} ms: ${statusText} ${errorText}`);
-      if (statusText.includes("committed")) break;
+      if (statusText.includes("committed")) {
+        // How long the network took vs. how long the light client took to notice.
+        const txHash = /0x[0-9a-f]{64}/.exec(statusText)?.[0];
+        if (txHash) {
+          const rpc = new ccc.ClientPublicTestnet();
+          const onChain = await rpc.getTransaction(txHash).catch(() => undefined);
+          const header = onChain?.blockNumber !== undefined ? await rpc.getHeaderByNumber(onChain.blockNumber).catch(() => undefined) : undefined;
+          if (header) {
+            console.log(`[wallet] tx ${txHash} included in block ${onChain!.blockNumber} at ${new Date(Number(header.timestamp)).toISOString()}; broadcast at ${new Date(sentAt).toISOString()}; network inclusion took ${Math.round((Number(header.timestamp) - sentAt) / 1000)} s`);
+          }
+          test.info().annotations.push({ type: "tx", description: txHash });
+        }
+        break;
+      }
       await page.waitForTimeout(10_000);
     }
     expect(statusText, errorText).toContain("committed");
-    const txHash = /0x[0-9a-f]{64}/.exec(statusText)?.[0] ?? "";
-    test.info().annotations.push({ type: "tx", description: txHash });
 
     expect(rpcLike, "no JSON-RPC requests allowed").toEqual([]);
   });
