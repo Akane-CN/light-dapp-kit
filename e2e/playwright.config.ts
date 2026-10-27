@@ -12,6 +12,8 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:4173",
     headless: true,
+    // Locator actions must never wait for the whole test timeout on a missing element.
+    actionTimeout: 30_000,
     // Point at a pre-installed Chromium instead of Playwright's own download (optional).
     ...(process.env.PW_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.PW_CHROMIUM_PATH } } : {}),
   },

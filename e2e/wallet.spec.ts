@@ -81,7 +81,7 @@ test.describe("wallet pages with a private-key signer (testnet)", () => {
   test.skip(!KEY, "set TESTNET_PRIVATE_KEY to a funded testnet key to run this suite");
 
   test("balance, DAO list and a self-transfer, with zero JSON-RPC requests", async ({ page }) => {
-    test.setTimeout(40 * 60 * 1000);
+    test.setTimeout(25 * 60 * 1000);
     const key = KEY!;
     const expectedAddress = await new ccc.SignerCkbPrivateKey(new ccc.ClientPublicTestnet(), key).getRecommendedAddress();
     const prepared = await prepareAddress(key, expectedAddress);
@@ -164,7 +164,9 @@ test.describe("wallet pages with a private-key signer (testnet)", () => {
         }, { timeout: 20 * 60 * 1000, intervals: [2000] })
         .toMatch(/committed|error/);
       statusText = last;
-      errorText = (await page.getByTestId("send-error").textContent().catch(() => null)) ?? "";
+      // The error element only exists on failure; never auto-wait for it.
+      const errorEl = page.getByTestId("send-error");
+      errorText = (await errorEl.count()) > 0 ? ((await errorEl.textContent()) ?? "") : "";
       console.log(`[wallet] send attempt ${attempt} after ${Date.now() - sentAt} ms: ${statusText} ${errorText}`);
       if (statusText.includes("committed")) {
         // How long the network took vs. how long the light client took to notice.
