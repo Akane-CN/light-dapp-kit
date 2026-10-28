@@ -111,25 +111,32 @@ test.describe("JoyID passkey wallet through the connector", () => {
 
     // Walk whatever JoyID shows next: fill a name if asked, press the obvious primary button,
     // stop when the popup closes (JoyID posts its result and closes itself).
-    const primaryRe = /^(Create|Continue|Next|Confirm|Authorize|Approve|Connect|Sign in|Register|Done|OK|Allow|Agree)/i;
-    for (let step = 1; step <= 8; step++) {
+    // Buttons that were on the landing screen stay in the DOM (hidden) after "Create New";
+    // only a button that newly appeared, or is visible and not yet tried, is worth clicking.
+    const primaryRe = /^(Authenticate|Continue|Next|Confirm|Authorize|Approve|Connect|Sign in|Register|Done|OK|Allow|Agree|Create)/i;
+    const landing = new Set(state.buttons);
+    const tried = new Set<string>(["Create New"]);
+    for (let step = 1; step <= 10; step++) {
       await popup.waitForTimeout(3000);
       if (popup.isClosed()) { note(`popup step ${step}: popup closed`); break; }
       state = await describe();
-      note(`popup step ${step}: url=${popup.url().split("?")[0]} buttons=${JSON.stringify(state.buttons)} inputs=${JSON.stringify(state.inputs)} text="${state.text.slice(0, 200)}"`);
+      const visible = (await popup.locator("button:visible").allInnerTexts().catch(() => [])).map((b) => b.replace(/\s+/g, " ").trim()).filter(Boolean);
+      note(`popup step ${step}: url=${popup.url().split("?")[0]} visible=${JSON.stringify(visible)} inputs=${JSON.stringify(state.inputs.filter((i) => !/^(checkbox|range):$/.test(i)))} text="${state.text.slice(0, 200)}"`);
       await shot(popup, `03-joyid-step${step}`);
-      const nameInput = popup.locator("input[type=text], input:not([type])").first();
+      const nameInput = popup.locator("input[type=text]:visible, input:not([type]):visible").first();
       if ((await nameInput.count()) > 0 && (await nameInput.inputValue().catch(() => "")) === "") {
         const name = `lightdapp${Date.now() % 100000}`;
         await nameInput.fill(name).catch(() => {});
         note(`filled name "${name}"`);
       }
-      const primary = state.buttons.find((b) => primaryRe.test(b));
+      const candidates = visible.filter((b) => !tried.has(b) && !(landing.has(b) && !primaryRe.test(b)));
+      const primary = candidates.find((b) => primaryRe.test(b) && !landing.has(b)) ?? candidates.find((b) => primaryRe.test(b));
       if (primary) {
-        await popup.getByRole("button", { name: primary, exact: true }).first().click().catch((e) => note(`click "${primary}" failed: ${String(e).slice(0, 80)}`));
-        note(`clicked "${primary}"`);
+        tried.add(primary);
+        const ok = await popup.getByRole("button", { name: primary, exact: true }).filter({ visible: true }).first().click({ timeout: 10_000 }).then(() => true).catch((e) => { note(`click "${primary}" failed: ${String(e).slice(0, 80)}`); return false; });
+        if (ok) note(`clicked "${primary}"`);
       } else {
-        note("no obvious primary button; waiting");
+        note(`no new primary button among ${JSON.stringify(visible)}; waiting`);
       }
     }
 
