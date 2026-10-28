@@ -21,6 +21,12 @@ genesis would take more than 10 hours. Always give `watch()` or
 `watchFromBlock` a start close to the wallet's first activity, and never call
 it with block 0 on a real network.
 
+Measured end to end in the same CI setup (`e2e/wallet.spec.ts`): headers synced
+in 65–90 s with 6–8 peers; the balance page reached `ready` 135–195 s after
+load with an explicit start block; a signed transfer was `pending` 2 s after
+the click and `committed` 32–64 s later, of which about 23 s was the network's
+own inclusion time.
+
 ## Cross-origin isolation
 
 `SharedArrayBuffer` requires a cross-origin-isolated page. Two ways to get there,
