@@ -41,18 +41,38 @@ test.describe("JoyID passkey wallet through the connector", () => {
     // Connector: "Connect wallet" → JoyID Passkey → CKB. The lit components sit in shadow DOM;
     // click by coordinates because the slotted label does not forward clicks reliably.
     await page.getByRole("button", { name: "Connect wallet" }).click();
+    const sceneText = () => page.evaluate(() => {
+      const c = document.querySelector("ccc-connector")?.shadowRoot;
+      return [...(c?.querySelectorAll("*") ?? [])]
+        .filter((e) => e.tagName.includes("-"))
+        .map((e) => `${e.tagName.toLowerCase()}:${(e.shadowRoot?.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 120)}`)
+        .join(" | ");
+    });
+    const connectorItem = (text: string) => page.locator("ccc-selecting-scene ccc-button").filter({ hasText: text }).first();
     const clickConnectorItem = async (text: string) => {
-      const item = page.locator("ccc-selecting-scene ccc-button").filter({ hasText: text }).first();
-      await item.waitFor({ timeout: 15_000 });
+      const item = connectorItem(text);
+      await item.waitFor({ timeout: 20_000 });
       const box = (await item.boundingBox())!;
       await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     };
-    await clickConnectorItem("JoyID");
-    await page.waitForTimeout(1000);
-    await shot(page, "01-connector-joyid");
-    const popupPromise = page.waitForEvent("popup", { timeout: 20_000 });
-    await clickConnectorItem("CKB");
-    const popup = await popupPromise;
+    // The JoyID entry opens a second list (CKB / BTC / Nostr / EVM). The slotted label does
+    // not always forward the first click, so retry until that list is showing.
+    await connectorItem("JoyID").waitFor({ timeout: 20_000 });
+    note(`connector: ${await sceneText()}`);
+    let popup: Page | undefined;
+    for (let attempt = 1; attempt <= 5 && !popup; attempt++) {
+      await clickConnectorItem("JoyID");
+      const ckb = connectorItem("CKB");
+      const shown = await ckb.waitFor({ timeout: 5000 }).then(() => true).catch(() => false);
+      note(`attempt ${attempt}: JoyID clicked, CKB entry ${shown ? "shown" : "not shown"}; scene: ${await sceneText()}`);
+      if (!shown) { await page.waitForTimeout(1500); continue; }
+      await shot(page, `01-connector-joyid-${attempt}`);
+      const popupPromise = page.waitForEvent("popup", { timeout: 20_000 }).catch(() => undefined);
+      await clickConnectorItem("CKB");
+      popup = await popupPromise;
+      if (!popup) note(`attempt ${attempt}: CKB clicked but no popup; scene: ${await sceneText()}`);
+    }
+    if (!popup) { await shot(page, "01-connector-failed"); throw new Error("connector did not open the JoyID popup"); }
     popup.on("console", (m) => { if (m.type() === "error") console.log(`[popup:error] ${m.text().slice(0, 300)}`); });
     note(`popup opened (${popup.url()})`);
 
