@@ -54,17 +54,25 @@ test.describe("JoyID passkey wallet through the connector", () => {
     await clickConnectorItem("CKB");
     const popup = await popupPromise;
     popup.on("console", (m) => { if (m.type() === "error") console.log(`[popup:error] ${m.text().slice(0, 300)}`); });
-    note(`popup opened: ${popup.url().split("?")[0]}`);
+    note(`popup opened (${popup.url()})`);
 
-    // Virtual authenticator, attached before the popup makes any WebAuthn call.
+    // Virtual authenticator, attached before the popup makes any WebAuthn call. The CDP
+    // session is bound to the popup target, so it survives the navigation to JoyID.
     const cdp = await context.newCDPSession(popup);
     await cdp.send("WebAuthn.enable");
     const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
       options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
     });
     note(`virtual authenticator attached (${authenticatorId})`);
+    // The connector opens a blank popup first and then points it at JoyID.
+    await popup.waitForURL(/joyid\.dev|joy\.id/, { timeout: 30_000 });
     await popup.waitForLoadState("domcontentloaded").catch(() => {});
-    const opener = await popup.evaluate(() => (window.opener ? "present" : "null")).catch(() => "unreadable");
+    note(`popup navigated to ${popup.url().split("?")[0]}`);
+    let opener = "unreadable";
+    for (let i = 0; i < 10 && opener === "unreadable"; i++) {
+      opener = await popup.evaluate(() => (window.opener ? "present" : "null")).catch(() => "unreadable");
+      if (opener === "unreadable") await popup.waitForTimeout(1000);
+    }
     note(`popup window.opener: ${opener}`);
     expect(opener, "popup must keep its opener (Document-Isolation-Policy)").toBe("present");
 
