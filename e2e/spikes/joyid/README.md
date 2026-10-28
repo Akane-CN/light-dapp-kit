@@ -16,19 +16,31 @@ node e2e/spikes/joyid/headers.cjs
 PW_CHROMIUM_PATH=/path/to/chrome node e2e/spikes/joyid/headers.cjs   # optional browser override
 ```
 
-## Automating the JoyID login itself (open)
+## Automating the JoyID login itself (answered)
 
-Under DIP the popup opens and keeps its opener, so the remaining obstacle is the
-passkey. Chrome's CDP `WebAuthn` domain can attach a virtual authenticator to the
-popup (`WebAuthn.enable`, `WebAuthn.addVirtualAuthenticator` with `ctap2`,
-`internal`, resident keys, automatic presence) before clicking "Create New" or
-"Login with Passkey". Two things still need a manual experiment, because each
-run registers a real JoyID testnet account:
+`e2e/joyid.spec.ts` drives the real popup with a CDP virtual authenticator.
+What was established, in order (CI logs and screenshots in the `joyid-report`
+artifact of any `[joyid]` run):
 
-1. whether `WebAuthn.addCredential` with a fixed P-256 key makes JoyID resolve
-   the same account (and therefore the same CKB address) on every run;
-2. how JoyID's login flow behaves with a discoverable credential it has never
-   seen in its own storage.
+1. The connector's JoyID entry needs a retried click; the popup starts as
+   `about:blank` and then navigates to `https://testnet.joyid.dev/auth`.
+2. The virtual authenticator must be attached after that navigation (the
+   cross-origin navigation swaps the renderer); afterwards
+   `isUserVerifyingPlatformAuthenticatorAvailable()` is true in the popup.
+3. JoyID calls `credentials.create()` with `rp.id = testnet.joyid.dev`,
+   platform attachment, resident key, user verification required, ES256 or
+   RS256. The call succeeds.
+4. JoyID then rejects the credential: "JoyID is not supported in current
+   environment ... sync Chrome with Google Account". Its client checks the
+   attestation's AAGUID against an allow-list of passkey providers (Google
+   Password Manager `ea9b8d66-…`, iCloud Keychain `fbfc3007-…`, Bitwarden,
+   1Password, LastPass, ProtoPass, its own recovery key) and, outside macOS and
+   iOS, refuses the all-zero AAGUID as well. Chrome's virtual authenticator
+   reports `01020304-0506-0708-0102-030405060708`, which is on no list.
 
-Until both are answered, the wallet e2e uses a private-key signer instead
-(`e2e/wallet.spec.ts`).
+Getting past step 4 would mean rewriting the attestation object's AAGUID to
+impersonate a listed provider before JoyID's server sees it. That is forging
+attestation metadata sent to a third-party service, so it is deliberately not
+done here. The JoyID connection therefore stays a manual check (Chrome with a
+synced passkey, or macOS); everything up to and including the WebAuthn
+ceremony is covered by the spec.

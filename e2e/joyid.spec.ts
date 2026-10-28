@@ -47,7 +47,18 @@ test.describe("JoyID passkey wallet through the connector", () => {
           (navigator.credentials as unknown as Record<string, unknown>)[method] = async (opts: unknown) => {
             const pk = (opts as { publicKey?: Record<string, unknown> })?.publicKey ?? {};
             console.error(`[probe] credentials.${method}: ${JSON.stringify({ rp: pk.rp, authenticatorSelection: pk.authenticatorSelection, attestation: pk.attestation, pubKeyCredParams: pk.pubKeyCredParams, userVerification: pk.userVerification, extensions: pk.extensions && Object.keys(pk.extensions as object) })}`);
-            try { const r = await orig(opts as CredentialCreationOptions & CredentialRequestOptions); console.error(`[probe] credentials.${method} ok: ${r?.id?.slice(0, 16)}`); return r; }
+            try {
+              const r = await orig(opts as CredentialCreationOptions & CredentialRequestOptions);
+              let extra = "";
+              const resp = (r as PublicKeyCredential | null)?.response as AuthenticatorAttestationResponse | undefined;
+              if (method === "create" && resp && typeof resp.getAuthenticatorData === "function") {
+                const ad = new Uint8Array(resp.getAuthenticatorData());
+                const hex = [...ad.slice(37, 53)].map((x) => x.toString(16).padStart(2, "0")).join("");
+                extra = ` aaguid=${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)} flags=${ad[32].toString(2).padStart(8, "0")} transports=${JSON.stringify(resp.getTransports?.())}`;
+              }
+              console.error(`[probe] credentials.${method} ok: ${r?.id?.slice(0, 16)}${extra}`);
+              return r;
+            }
             catch (e) { console.error(`[probe] credentials.${method} failed: ${String(e)}`); throw e; }
           };
         }
@@ -159,6 +170,13 @@ test.describe("JoyID passkey wallet through the connector", () => {
         const name = `lightdapp${Date.now() % 100000}`;
         await nameInput.fill(name).catch(() => {});
         note(`filled name "${name}"`);
+      }
+      if (/not supported in current environment/i.test(state.text)) {
+        note(`JoyID rejected the environment: "${state.text.slice(state.text.indexOf("JoyID is not supported"), state.text.indexOf("JoyID is not supported") + 260)}"`);
+        await shot(popup, "03-joyid-rejected");
+        mkdirSync(path.dirname(SUMMARY), { recursive: true });
+        writeFileSync(SUMMARY, lines.join("\n") + "\n");
+        throw new Error("JoyID accepted the WebAuthn credential but rejected the environment: its client only continues when the credential's AAGUID is one of its known passkey providers (Google Password Manager, iCloud Keychain, Bitwarden, ...), which Chrome's virtual authenticator is not");
       }
       const candidates = visible.filter((b) => !tried.has(b) && !(landing.has(b) && !primaryRe.test(b)));
       const primary = candidates.find((b) => primaryRe.test(b) && !landing.has(b)) ?? candidates.find((b) => primaryRe.test(b));

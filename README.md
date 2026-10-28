@@ -51,9 +51,18 @@ bun run e2e -- wallet.spec.ts
 
 `e2e/joyid.spec.ts` goes through the real JoyID popup instead: a CDP virtual
 authenticator answers the passkey prompts, every step is screenshotted and
-attached, and trace + video are recorded. It registers a JoyID testnet account
-per run, so it is opt-in (`RUN_JOYID=1`; in CI, a manual workflow run or a
-`main` commit message containing `[joyid]`).
+attached, and trace + video are recorded. It is opt-in (`RUN_JOYID=1`; in CI,
+a manual workflow run or a `main` commit message containing `[joyid]`).
+
+Current result: the connector opens the popup, the popup keeps its opener,
+JoyID's `credentials.create()` succeeds, and then JoyID's own client rejects
+the credential with "JoyID is not supported in current environment". Its
+client only continues when the credential's AAGUID belongs to a known passkey
+provider (Google Password Manager, iCloud Keychain, Bitwarden, 1Password, ...);
+Chrome's virtual authenticator reports `01020304-0506-0708-0102-030405060708`.
+So the JoyID connection cannot be automated end to end without forging
+attestation metadata, which this project does not do; the spec stops at that
+point with the exact message, and the connection itself stays a manual check.
 
 CI runs the wallet job on pushes to `main` from the `TESTNET_PRIVATE_KEY` secret and
 the `TESTNET_FROM_BLOCK` / `TESTNET_EXPECT_DAO` repository variables; the spec
