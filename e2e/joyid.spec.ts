@@ -33,6 +33,26 @@ test.describe("JoyID passkey wallet through the connector", () => {
       if ((m.type() === "error" || m.type() === "warning") && !/IdentifyProtocol|%cWARN/.test(t)) console.log(`[app:${m.type()}] ${t.slice(0, 300)}`);
     });
 
+    // Probe for every page in the context (the JoyID popup included): report the platform
+    // authenticator check and any WebAuthn error to the console so the log shows why a
+    // passkey step failed.
+    await context.addInitScript(() => {
+      const w = window as unknown as { PublicKeyCredential?: { isUserVerifyingPlatformAuthenticatorAvailable?: () => Promise<boolean> } };
+      if (location.hostname.includes("joyid")) {
+        w.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable?.()
+          .then((v) => console.error(`[probe] isUserVerifyingPlatformAuthenticatorAvailable=${v}`))
+          .catch((e) => console.error(`[probe] isUVPAA threw ${String(e)}`));
+        for (const method of ["create", "get"] as const) {
+          const orig = navigator.credentials[method].bind(navigator.credentials);
+          (navigator.credentials as unknown as Record<string, unknown>)[method] = async (opts: unknown) => {
+            const pk = (opts as { publicKey?: Record<string, unknown> })?.publicKey ?? {};
+            console.error(`[probe] credentials.${method}: ${JSON.stringify({ rp: pk.rp, authenticatorSelection: pk.authenticatorSelection, attestation: pk.attestation, pubKeyCredParams: pk.pubKeyCredParams, userVerification: pk.userVerification, extensions: pk.extensions && Object.keys(pk.extensions as object) })}`);
+            try { const r = await orig(opts as CredentialCreationOptions & CredentialRequestOptions); console.error(`[probe] credentials.${method} ok: ${r?.id?.slice(0, 16)}`); return r; }
+            catch (e) { console.error(`[probe] credentials.${method} failed: ${String(e)}`); throw e; }
+          };
+        }
+      }
+    });
     await page.goto("/?network=testnet");
     const isolated = await page.evaluate(() => ({ crossOriginIsolated, ua: navigator.userAgent }));
     note(`page loaded; crossOriginIsolated=${isolated.crossOriginIsolated} (${isolated.ua.slice(0, 60)})`);
@@ -73,21 +93,32 @@ test.describe("JoyID passkey wallet through the connector", () => {
       if (!popup) note(`attempt ${attempt}: CKB clicked but no popup; scene: ${await sceneText()}`);
     }
     if (!popup) { await shot(page, "01-connector-failed"); throw new Error("connector did not open the JoyID popup"); }
-    popup.on("console", (m) => { if (m.type() === "error") console.log(`[popup:error] ${m.text().slice(0, 300)}`); });
+    popup.on("console", (m) => {
+      const t = m.text();
+      if (t.startsWith("[probe]")) note(`popup ${t}`);
+      else if (m.type() === "error") console.log(`[popup:error] ${t.slice(0, 300)}`);
+    });
     note(`popup opened (${popup.url()})`);
 
-    // Virtual authenticator, attached before the popup makes any WebAuthn call. The CDP
-    // session is bound to the popup target, so it survives the navigation to JoyID.
-    const cdp = await context.newCDPSession(popup);
-    await cdp.send("WebAuthn.enable");
-    const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
-      options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
-    });
-    note(`virtual authenticator attached (${authenticatorId})`);
-    // The connector opens a blank popup first and then points it at JoyID.
+    // The connector opens a blank popup first and then points it at JoyID. The cross-origin
+    // navigation swaps the renderer, so the virtual authenticator is attached only after it
+    // (JoyID runs its WebAuthn checks on button click, so nothing is missed).
     await popup.waitForURL(/joyid\.dev|joy\.id/, { timeout: 30_000 });
     await popup.waitForLoadState("domcontentloaded").catch(() => {});
     note(`popup navigated to ${popup.url().split("?")[0]}`);
+    const cdp = await context.newCDPSession(popup);
+    await cdp.send("WebAuthn.enable", { enableUI: false });
+    const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+      options: {
+        protocol: "ctap2", ctap2Version: "ctap2_1", transport: "internal",
+        hasResidentKey: true, hasUserVerification: true, isUserVerified: true,
+        hasLargeBlob: true, hasPrf: true, automaticPresenceSimulation: true,
+        defaultBackupEligibility: true, defaultBackupState: true,
+      },
+    });
+    note(`virtual authenticator attached (${authenticatorId})`);
+    const uvpaa = await popup.evaluate(() => PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()).catch((e) => `threw ${String(e).slice(0, 60)}`);
+    note(`popup isUserVerifyingPlatformAuthenticatorAvailable after attach: ${uvpaa}`);
     let opener = "unreadable";
     for (let i = 0; i < 10 && opener === "unreadable"; i++) {
       opener = await popup.evaluate(() => (window.opener ? "present" : "null")).catch(() => "unreadable");
@@ -121,7 +152,7 @@ test.describe("JoyID passkey wallet through the connector", () => {
       if (popup.isClosed()) { note(`popup step ${step}: popup closed`); break; }
       state = await describe();
       const visible = (await popup.locator("button:visible").allInnerTexts().catch(() => [])).map((b) => b.replace(/\s+/g, " ").trim()).filter(Boolean);
-      note(`popup step ${step}: url=${popup.url().split("?")[0]} visible=${JSON.stringify(visible)} inputs=${JSON.stringify(state.inputs.filter((i) => !/^(checkbox|range):$/.test(i)))} text="${state.text.slice(0, 200)}"`);
+      note(`popup step ${step}: url=${popup.url().split("?")[0]} visible=${JSON.stringify(visible)} inputs=${JSON.stringify(state.inputs.filter((i) => !/^(checkbox|range):$/.test(i)))} text="${state.text.slice(0, 500)}"`);
       await shot(popup, `03-joyid-step${step}`);
       const nameInput = popup.locator("input[type=text]:visible, input:not([type]):visible").first();
       if ((await nameInput.count()) > 0 && (await nameInput.inputValue().catch(() => "")) === "") {
