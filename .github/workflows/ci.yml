@@ -1,5 +1,5 @@
 name: CI
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 jobs:
   unit:
     runs-on: ubuntu-latest
@@ -49,3 +49,30 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: playwright-report-wallet, path: e2e/playwright-report }
+  # JoyID passkey wallet through the connector, driven by a CDP virtual authenticator.
+  # Registers a JoyID testnet account per run, so it only runs on manual dispatch or when
+  # a main-branch commit message contains "[joyid]". Screenshots, trace and video are
+  # uploaded; the step summary carries the per-step log.
+  e2e-joyid:
+    runs-on: ubuntu-latest
+    needs: unit
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[joyid]'))
+    env:
+      RUN_JOYID: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run build
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run e2e -- joyid.spec.ts
+      - name: step summary
+        if: always()
+        run: cat e2e/test-results/joyid-summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "no summary written (test aborted early; see artifacts)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: joyid-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results

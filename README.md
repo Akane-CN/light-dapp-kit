@@ -49,7 +49,13 @@ TESTNET_EXPECT_DAO=1      # optional: require a Nervos DAO deposit to be listed
 bun run e2e -- wallet.spec.ts
 ```
 
-CI runs this job on pushes to `main` from the `TESTNET_PRIVATE_KEY` secret and
+`e2e/joyid.spec.ts` goes through the real JoyID popup instead: a CDP virtual
+authenticator answers the passkey prompts, every step is screenshotted and
+attached, and trace + video are recorded. It registers a JoyID testnet account
+per run, so it is opt-in (`RUN_JOYID=1`; in CI, a manual workflow run or a
+`main` commit message containing `[joyid]`).
+
+CI runs the wallet job on pushes to `main` from the `TESTNET_PRIVATE_KEY` secret and
 the `TESTNET_FROM_BLOCK` / `TESTNET_EXPECT_DAO` repository variables; the spec
 skips itself when the secret is absent. Keep nothing but faucet CKB on that key.
 
