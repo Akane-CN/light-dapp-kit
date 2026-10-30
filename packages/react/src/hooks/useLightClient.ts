@@ -13,5 +13,6 @@ export function useLightClient() {
   const pause = useCallback(() => client.pause(), [client]);
   const resume = useCallback(() => client.resume(), [client]);
   const reset = useCallback(() => client.reset(), [client]);
-  return { client, sync, start, pause, resume, reset };
+  const retry = useCallback(() => client.retry(), [client]);
+  return { client, sync, start, pause, resume, reset, retry };
 }

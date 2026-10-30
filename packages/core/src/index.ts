@@ -1,7 +1,9 @@
 export { LightClientCccClient } from "./client.js";
 export type { LightClientOptions } from "./client.js";
 export { SyncMachine } from "./sync.js";
-export type { SyncPhase, SyncState, SyncError } from "./sync.js";
+export type { SyncPhase, SyncState, SyncError, SyncRetry } from "./sync.js";
+export { DEFAULT_RETRY, backoffDelay, FailureTracker } from "./retry.js";
+export type { RetryPolicy } from "./retry.js";
 export { NETWORKS, resolveNetwork } from "./config.js";
 export type { NetworkName, NetworkConfig } from "./config.js";
 export { WatchList } from "./watch.js";

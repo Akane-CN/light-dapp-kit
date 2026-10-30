@@ -11,7 +11,7 @@
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "dev:wallet": "bun run --cwd apps/light-wallet dev",
     "lint": "eslint .",
-    "typecheck": "tsc -b && tsc -p e2e"
+    "typecheck": "tsc -b && tsc -p e2e && tsc -p packages/react/tsconfig.test.json"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.0",

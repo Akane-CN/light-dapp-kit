@@ -70,3 +70,31 @@ describe("resolveWatchStart", () => {
     expect(resolveWatchStart(500n, { defaultWatchDepth: 1000n })).toBe(0n);
   });
 });
+
+describe("SyncMachine recovery", () => {
+  it("records the scheduled retry on fail and clears it when leaving error", () => {
+    const m = new SyncMachine();
+    m.transition("booting");
+    m.fail({ code: "BOOT_FAILED", message: "x", retryable: true }, { attempt: 1, nextAt: 123 });
+    expect(m.get().phase).toBe("error");
+    expect(m.get().retry).toEqual({ attempt: 1, nextAt: 123 });
+    m.transition("booting");
+    expect(m.get().error).toBeUndefined();
+    expect(m.get().retry).toBeUndefined();
+  });
+  it("lets a successful poll leave error straight for the derived phase", () => {
+    const m = new SyncMachine();
+    m.transition("booting");
+    m.transition("syncing-headers");
+    m.fail({ code: "POLL_FAILED", message: "peer timeout", retryable: true });
+    m.transition("ready");
+    expect(m.get().phase).toBe("ready");
+  });
+  it("still returns to idle through reset", () => {
+    const m = new SyncMachine();
+    m.transition("booting");
+    m.fail({ code: "BOOT_FAILED", message: "x", retryable: false });
+    m.transition("idle");
+    expect(m.get().phase).toBe("idle");
+  });
+});

@@ -4,6 +4,20 @@
 
 Replace your `ccc.Provider` with `LightClientProvider`. Everything else stays.
 
+## Loading and recovery
+
+`@light-dapp-kit/core` imports `ckb-light-client-js` (the ~10 MB WASM + workers)
+lazily on `start()`, so your app renders before the download begins; bundlers
+split it into its own async chunk. In the demo this keeps the gzipped entry near
+300 KB instead of several MB.
+
+Boot and poll failures recover on their own. A few consecutive poll misses (peer
+churn, a worker call racing a reload) are tolerated silently; past the threshold
+the phase shows `error` and the client backs off exponentially but keeps polling,
+so it heals as soon as the light client answers. Boot is retried the same way.
+`SyncState.retry` carries the scheduled attempt and time; `client.retry()` (and
+the Retry button in `SyncStatus`) skips the wait. Only `reset()` wipes local data.
+
 ## Things that differ from RPC mode
 
 | Behaviour | RPC | Light client |

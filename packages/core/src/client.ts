@@ -1,9 +1,21 @@
 import { ccc } from "@ckb-ccc/core";
-import { LightClient, LightClientSetScriptsCommand, randomSecretKey } from "ckb-light-client-js";
+import type { LightClient } from "ckb-light-client-js";
 import { buildLightClientToml, resolveNetwork, resolveWatchStart, type NetworkConfig, type NetworkName } from "./config.js";
+import { DEFAULT_RETRY, FailureTracker, backoffDelay, type RetryPolicy } from "./retry.js";
 import { SyncMachine, type SyncState } from "./sync.js";
 import { WatchList, type WatchEntry } from "./watch.js";
 import { loadMeta, saveMeta, clearDatabases } from "./storage.js";
+
+/**
+ * `ckb-light-client-js` is ~10 MB (two inlined workers + WASM). It is imported lazily on
+ * `start()` so the host app renders before the download begins; bundlers split it into
+ * its own chunk.
+ */
+type LcModule = typeof import("ckb-light-client-js");
+let lcModulePromise: Promise<LcModule> | undefined;
+function loadLightClientModule(): Promise<LcModule> {
+  return (lcModulePromise ??= import("ckb-light-client-js"));
+}
 
 export interface LightClientOptions {
   network: NetworkName;
@@ -12,6 +24,8 @@ export interface LightClientOptions {
   /** Poll interval for tips/peers in ms. */
   pollIntervalMs?: number;
   logLevel?: "trace" | "debug" | "info" | "error";
+  /** Automatic retry behaviour for boot and poll failures. */
+  retry?: Partial<RetryPolicy>;
 }
 
 /**
@@ -36,13 +50,23 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
   readonly watches = new WatchList();
 
   private lc: LightClient | null = null;
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private lcModule: LcModule | null = null;
   private readonly pollIntervalMs: number;
   private readonly logLevel: LightClientOptions["logLevel"];
+  private readonly retryPolicy: RetryPolicy;
   private startPromise: Promise<void> | null = null;
   /** Resolves once the workers are up (`lc` assigned); re-armed by stop(). */
   private booted!: Promise<void>;
   private resolveBooted!: () => void;
+
+  // Polling is a setTimeout chain (not setInterval) so the delay can stretch into
+  // exponential backoff while the light client is failing, then snap back.
+  private polling = false;
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly pollFailures = new FailureTracker();
+  /** Pending boot-retry sleep, cancelled by stop(). */
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private cancelRetrySleep: (() => void) | null = null;
 
   constructor(opts: LightClientOptions) {
     // Base client still wants a URL; it is never used because every RPC method is overridden.
@@ -50,6 +74,7 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     this.cfg = resolveNetwork(opts.network, opts.config);
     this.pollIntervalMs = opts.pollIntervalMs ?? 2000;
     this.logLevel = opts.logLevel ?? "info";
+    this.retryPolicy = { ...DEFAULT_RETRY, ...opts.retry };
     this.armBooted();
   }
 
@@ -59,30 +84,62 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
 
   // ---------------------------------------------------------------- lifecycle
 
-  /** Boot the workers and begin syncing. Idempotent. */
+  /**
+   * Boot the workers and begin syncing. Idempotent. A failed boot is retried with
+   * backoff up to `retry.maxBootAttempts` times (the phase shows `error` with the
+   * scheduled retry in between); the promise rejects only after the last attempt.
+   */
   start(): Promise<void> {
     if (this.startPromise) return this.startPromise;
-    this.startPromise = this.doStart().catch((e) => {
-      this.sync.fail({ code: "BOOT_FAILED", message: String(e), retryable: true });
-      this.startPromise = null;
+    const p = this.doStart().catch((e) => {
+      if (this.startPromise === p) this.startPromise = null;
       throw e;
     });
-    return this.startPromise;
+    this.startPromise = p;
+    return p;
   }
 
   private async doStart(): Promise<void> {
     this.sync.transition("booting", { startedAt: Date.now() });
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.boot();
+        return;
+      } catch (e) {
+        const retryable = attempt < this.retryPolicy.maxBootAttempts;
+        const delay = backoffDelay(attempt, this.retryPolicy);
+        this.sync.fail(
+          { code: "BOOT_FAILED", message: String(e), retryable },
+          retryable ? { attempt, nextAt: Date.now() + delay } : undefined,
+        );
+        if (!retryable) throw e;
+        const cancelled = await this.sleepForRetry(delay);
+        if (cancelled) return; // stop() during the wait
+        this.sync.transition("booting");
+      }
+    }
+  }
+
+  /** One boot attempt; leaves nothing running if it throws. */
+  private async boot(): Promise<void> {
+    const mod = await loadLightClientModule();
+    this.lcModule = mod;
 
     const meta = await loadMeta(this.cfg.dbName);
-    const secret = meta?.networkSecretKey ?? randomSecretKey();
+    const secret = meta?.networkSecretKey ?? mod.randomSecretKey();
     if (meta?.watches) {
       for (const w of WatchList.fromJSON(meta.watches).list()) this.watches.add(w);
     }
 
-    const lc = new LightClient();
+    const lc = new mod.LightClient();
     const toml = buildLightClientToml(this.cfg);
     const transport = location.protocol === "https:" ? "wss" : "ws";
-    await lc.start({ type: this.cfg.lcType, config: toml }, secret, this.logLevel, transport);
+    try {
+      await lc.start({ type: this.cfg.lcType, config: toml }, secret, this.logLevel, transport);
+    } catch (e) {
+      await lc.stop().catch(() => {});
+      throw e;
+    }
     this.lc = lc;
     this.resolveBooted();
 
@@ -90,13 +147,42 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     await this.pushScripts();
 
     this.sync.transition("syncing-headers");
-    this.pollTimer = setInterval(() => void this.tick(), this.pollIntervalMs);
+    this.pollFailures.reset();
+    this.startPolling();
     await this.tick();
   }
 
-  async stop(): Promise<void> {
-    if (this.pollTimer) clearInterval(this.pollTimer);
+  /** Resolves true if stop() cancelled the wait. */
+  private sleepForRetry(ms: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.retryTimer = setTimeout(() => { this.retryTimer = null; this.cancelRetrySleep = null; resolve(false); }, ms);
+      this.cancelRetrySleep = () => { if (this.retryTimer) clearTimeout(this.retryTimer); this.retryTimer = null; this.cancelRetrySleep = null; resolve(true); };
+    });
+  }
+
+  private startPolling(): void {
+    this.polling = true;
+    this.scheduleTick(this.pollIntervalMs);
+  }
+
+  private stopPolling(): void {
+    this.polling = false;
+    if (this.pollTimer) clearTimeout(this.pollTimer);
     this.pollTimer = null;
+  }
+
+  private scheduleTick(ms: number): void {
+    if (!this.polling) return;
+    if (this.pollTimer) clearTimeout(this.pollTimer);
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
+      void this.tick();
+    }, ms);
+  }
+
+  async stop(): Promise<void> {
+    this.stopPolling();
+    this.cancelRetrySleep?.();
     await this.lc?.stop();
     this.lc = null;
     this.startPromise = null;
@@ -104,14 +190,30 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
   }
 
   pause(): void {
-    if (this.pollTimer) clearInterval(this.pollTimer);
-    this.pollTimer = null;
+    this.stopPolling();
     this.sync.transition("paused");
   }
 
   resume(): void {
     this.sync.transition(this.sync.resumeTarget());
-    this.pollTimer = setInterval(() => void this.tick(), this.pollIntervalMs);
+    this.pollFailures.reset();
+    this.startPolling();
+  }
+
+  /**
+   * Retry now instead of waiting for the scheduled backoff: poll immediately when the
+   * light client is up, otherwise cancel any pending boot-retry sleep and boot again.
+   */
+  retry(): void {
+    if (this.sync.get().phase !== "error") return;
+    if (this.lc) {
+      this.polling = true;
+      this.scheduleTick(0);
+      return;
+    }
+    this.cancelRetrySleep?.(); // the sleeping doStart returns as "cancelled"
+    this.startPromise = null;
+    void this.start().catch(() => {});
   }
 
   /** Stop, wipe IndexedDB for this network, return to idle. */
@@ -163,11 +265,12 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
   }
 
   private async pushScripts(): Promise<void> {
-    if (!this.lc) return;
+    const mod = this.lcModule;
+    if (!this.lc || !mod) return;
     const entries: WatchEntry[] = this.watches.list();
     await this.lc.setScripts(
       entries.map((e) => ({ script: e.script, scriptType: e.scriptType, blockNumber: e.fromBlock })),
-      LightClientSetScriptsCommand.All,
+      mod.LightClientSetScriptsCommand.All,
     );
     await saveMeta(this.cfg.dbName, { watches: this.watches.toJSON() });
     const phase = this.sync.get().phase;
@@ -197,9 +300,24 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
       this.sync.patch({ headerTip, networkTip, cellTip, peers: peers.length });
       const derived = SyncMachine.derive({ headerTip, networkTip, cellTip });
       const cur = this.sync.get().phase;
+      // A successful poll also recovers from POLL_FAILED (error → derived phase).
       if (cur !== "paused" && cur !== derived) this.sync.transition(derived);
+      this.pollFailures.reset();
+      this.scheduleTick(this.pollIntervalMs);
     } catch (e) {
-      this.sync.fail({ code: "POLL_FAILED", message: String(e), retryable: true });
+      // Tolerate a few consecutive misses silently (peer churn, a worker call racing a
+      // reload); past the threshold surface `error` and back off, but keep polling so
+      // the client heals itself as soon as the light client answers again.
+      const failures = this.pollFailures.record();
+      const over = failures - this.retryPolicy.failuresBeforeError;
+      if (over < 0) {
+        this.scheduleTick(this.pollIntervalMs);
+        return;
+      }
+      const attempt = over + 1;
+      const delay = backoffDelay(attempt, this.retryPolicy);
+      this.sync.fail({ code: "POLL_FAILED", message: String(e), retryable: true }, { attempt, nextAt: Date.now() + delay });
+      this.scheduleTick(delay);
     }
   }
 

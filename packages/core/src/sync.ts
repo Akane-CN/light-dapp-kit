@@ -5,7 +5,8 @@
  * (syncing-headers → ready directly when no script is watched)
  *                        ↘ error ↙      ⇅ paused
  * ready → syncing-cells on new block / new watch, then back.
- * error → idle only via reset().
+ * error → booting (boot retry) or → a sync phase (a poll succeeded again); the
+ * client retries retryable errors on its own with backoff. error → idle via reset().
  */
 export type SyncPhase =
   | "idle"
@@ -22,6 +23,14 @@ export interface SyncError {
   retryable: boolean;
 }
 
+/** Scheduled automatic retry while in `error`. */
+export interface SyncRetry {
+  /** 1-based retry attempt about to run. */
+  attempt: number;
+  /** Epoch ms when the retry fires. */
+  nextAt: number;
+}
+
 export interface SyncState {
   phase: SyncPhase;
   headerTip: bigint;
@@ -30,19 +39,23 @@ export interface SyncState {
   peers: number;
   startedAt: number;
   error?: SyncError;
+  retry?: SyncRetry;
 }
 
 type Listener = (s: SyncState) => void;
 
+// `idle` is reachable from everywhere: reset() must always be legal.
 const TRANSITIONS: Record<SyncPhase, SyncPhase[]> = {
   idle: ["booting"],
-  booting: ["syncing-headers", "error"],
+  booting: ["syncing-headers", "error", "idle"],
   // Straight to ready when nothing is watched yet (no cells to index).
-  "syncing-headers": ["syncing-cells", "ready", "paused", "error"],
-  "syncing-cells": ["ready", "syncing-headers", "paused", "error"],
-  ready: ["syncing-cells", "paused", "error"],
-  paused: ["syncing-headers", "syncing-cells", "ready", "error"],
-  error: ["idle"],
+  "syncing-headers": ["syncing-cells", "ready", "paused", "error", "idle"],
+  "syncing-cells": ["ready", "syncing-headers", "paused", "error", "idle"],
+  ready: ["syncing-cells", "paused", "error", "idle"],
+  paused: ["syncing-headers", "syncing-cells", "ready", "error", "idle"],
+  // Recovery: a boot retry goes through booting again; a poll that succeeds after
+  // POLL_FAILED jumps straight to whatever the tips say.
+  error: ["idle", "booting", "syncing-headers", "syncing-cells", "ready"],
 };
 
 export class SyncMachine {
@@ -75,7 +88,7 @@ export class SyncMachine {
     }
     if (next === "paused") this.phaseBeforePause = from;
     this.state = { ...this.state, ...patch, phase: next };
-    if (next !== "error") this.state.error = undefined;
+    if (next !== "error") { this.state.error = undefined; this.state.retry = undefined; }
     this.emit();
   }
 
@@ -85,8 +98,9 @@ export class SyncMachine {
     this.emit();
   }
 
-  fail(error: SyncError): void {
-    this.state = { ...this.state, phase: "error", error };
+  /** Enter `error`. `retry` describes the automatic retry the client has scheduled, if any. */
+  fail(error: SyncError, retry?: SyncRetry): void {
+    this.state = { ...this.state, phase: "error", error, retry };
     this.emit();
   }
 
