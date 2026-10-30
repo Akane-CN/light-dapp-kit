@@ -14,10 +14,17 @@ const watchFromBlock = fromBlock ? BigInt(fromBlock) : undefined;
 // The branch is compiled out unless the build sets VITE_ALLOW_TEST_SIGNER=1, so
 // production bundles never read it.
 declare global {
-  interface Window { __LIGHT_WALLET_TEST_KEY?: string }
+  interface Window { __LIGHT_WALLET_TEST_KEY?: string; __ETH_TEST_KEY?: string }
 }
-const testKey = import.meta.env.VITE_ALLOW_TEST_SIGNER === "1" ? window.__LIGHT_WALLET_TEST_KEY : undefined;
+const allowTest = import.meta.env.VITE_ALLOW_TEST_SIGNER === "1";
+const testKey = allowTest ? window.__LIGHT_WALLET_TEST_KEY : undefined;
 const testSigner = testKey ? (client: ccc.Client) => new ccc.SignerCkbPrivateKey(client, testKey) : undefined;
+
+// Test-only: announce an EIP-6963 EVM wallet from a fixed key, so the e2e connector suite can
+// pick a wallet from the real connector UI. Dynamically imported so prod bundles never load it.
+if (allowTest && window.__ETH_TEST_KEY) {
+  void import("./test-evm-wallet").then((m) => m.registerTestEvmWallet(window.__ETH_TEST_KEY!));
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

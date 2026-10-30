@@ -23,8 +23,12 @@ export default function App() {
   const client = useLightClientContext();
   // Test-only: expose the client so the e2e suite can read syncState(). Compiled out otherwise.
   useEffect(() => {
-    if (import.meta.env.VITE_ALLOW_TEST_SIGNER === "1") (window as unknown as { __lightClient?: unknown }).__lightClient = client;
-  }, [client]);
+    if (import.meta.env.VITE_ALLOW_TEST_SIGNER === "1") {
+      const w = window as unknown as { __lightClient?: unknown; __signer?: unknown };
+      w.__lightClient = client;
+      w.__signer = signer; // test-only: lets the connector e2e exercise the signer's personal_sign
+    }
+  }, [client, signer]);
   const [page, setPage] = useState<keyof typeof pages>("Balance");
   const Page = pages[page];
   return (
