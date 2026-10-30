@@ -52,8 +52,10 @@ export function resolveNetwork(
 }
 
 /**
- * Build the light client TOML when custom bootnodes are supplied.
- * TODO(M1): confirm exact TOML keys against ckb-light-client config/*.toml.
+ * Build the light client TOML when custom bootnodes are supplied. The default path
+ * (`bootnodes: []`) returns undefined so the package's built-in config is used; that path
+ * is exercised on testnet in CI. The keys below mirror ckb-light-client's `config/*.toml`
+ * `[store]` / `[network]` sections, used only when a dApp supplies its own bootnodes.
  */
 export function buildLightClientToml(cfg: NetworkConfig): string | undefined {
   if (cfg.bootnodes.length === 0) return undefined;
