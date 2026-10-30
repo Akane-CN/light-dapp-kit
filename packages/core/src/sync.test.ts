@@ -98,3 +98,33 @@ describe("SyncMachine recovery", () => {
     expect(m.get().phase).toBe("idle");
   });
 });
+
+describe("WatchList reconcileWith", () => {
+  const lock = { codeHash: "0x" + "01".repeat(32), hashType: "type", args: "0xaa" };
+  const type = { codeHash: "0x" + "02".repeat(32), hashType: "type", args: "0xbb" };
+  it("raises an entry to the light client's synced block, never lowering it", () => {
+    const w = new WatchList([{ script: lock, scriptType: "lock", fromBlock: 1000n }]);
+    const changed = w.reconcileWith([{ script: lock, scriptType: "lock", blockNumber: 22888000n }]);
+    expect(changed).toBe(true);
+    expect(w.minFromBlock()).toBe(22888000n);
+  });
+  it("does not lower an entry already ahead of the synced block", () => {
+    const w = new WatchList([{ script: lock, scriptType: "lock", fromBlock: 22888000n }]);
+    const changed = w.reconcileWith([{ script: lock, scriptType: "lock", blockNumber: 1000n }]);
+    expect(changed).toBe(false);
+    expect(w.minFromBlock()).toBe(22888000n);
+  });
+  it("matches by script + scriptType and ignores unrelated synced scripts", () => {
+    const w = new WatchList([
+      { script: lock, scriptType: "lock", fromBlock: 10n },
+      { script: type, scriptType: "type", fromBlock: 10n },
+    ]);
+    w.reconcileWith([
+      { script: lock, scriptType: "lock", blockNumber: 500n },
+      { script: { ...lock, args: "0xff" }, scriptType: "lock", blockNumber: 9_000_000n },
+    ]);
+    const byArgs = Object.fromEntries(w.list().map((e) => [(e.script as { args: string }).args, e.fromBlock]));
+    expect(byArgs["0xaa"]).toBe(500n);
+    expect(byArgs["0xbb"]).toBe(10n);
+  });
+});

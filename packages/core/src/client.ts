@@ -143,6 +143,22 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     this.lc = lc;
     this.resolveBooted();
 
+    // The light client persists its own sync progress across reloads. Raise each restored
+    // watch to the block it has already reached so set_scripts does not rewind and re-scan
+    // blocks already synced (a from-scratch rescan is ~600 blocks/s).
+    try {
+      const synced = await lc.getScripts();
+      this.watches.reconcileWith(
+        synced.map((x) => ({
+          script: x.script,
+          scriptType: x.scriptType === "type" ? "type" : "lock",
+          blockNumber: BigInt(x.blockNumber),
+        })),
+      );
+    } catch {
+      // First boot (or a light client without stored scripts): nothing to reconcile.
+    }
+
     await saveMeta(this.cfg.dbName, { networkSecretKey: secret, watches: this.watches.toJSON() });
     await this.pushScripts();
 
@@ -396,7 +412,55 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
     const cellOutput = res.transaction.outputs[index];
     if (!cellOutput) return undefined;
     const outputData = withData ? (res.transaction.outputsData[index] ?? "0x") : "0x";
-    return ccc.Cell.from({ outPoint, cellOutput, outputData });
+    const cell = ccc.Cell.from({ outPoint, cellOutput, outputData });
+
+    // The transaction that created the cell proves it existed, not that it is still unspent.
+    // For a watched script the light client's get_cells returns only live cells, so we can
+    // tell: a spent cell (e.g. a stale input the caller is trying to reuse) returns undefined
+    // instead of a cell that would be rejected at broadcast. For unwatched scripts we cannot
+    // check, so we return the reconstructed cell (best effort), which is what CCC's cache
+    // fallback expects for resolving an arbitrary out point.
+    if (await this.isKnownSpent(cellOutput, outPoint)) return undefined;
+    return cell;
+  }
+
+  /**
+   * True only when the cell's lock or type is watched AND the light client's live set does
+   * not contain this out point (i.e. it is known to be spent). false = watched and live.
+   * undefined = cannot determine (unwatched, or too many cells to scan) → treated as live.
+   */
+  private async isKnownSpent(cellOutput: ccc.CellOutput, outPoint: ccc.OutPoint): Promise<boolean> {
+    const lc = this.lc;
+    if (!lc) return false;
+    let script: ccc.Script | undefined;
+    let scriptType: "lock" | "type" | undefined;
+    if (this.watches.has({ script: cellOutput.lock, scriptType: "lock" })) {
+      script = cellOutput.lock;
+      scriptType = "lock";
+    } else if (cellOutput.type && this.watches.has({ script: cellOutput.type, scriptType: "type" })) {
+      script = cellOutput.type;
+      scriptType = "type";
+    }
+    if (!script || !scriptType) return false; // not watched → cannot tell, treat as live
+
+    const MAX_PAGES = 5;
+    const PAGE = 1000n;
+    let after: ccc.Hex | undefined;
+    for (let i = 0; i < MAX_PAGES; i++) {
+      const page = await lc.getCells(
+        { script, scriptType, scriptSearchMode: "exact", withData: false },
+        "asc",
+        PAGE,
+        after,
+      );
+      for (const c of page.cells) {
+        const op = ccc.OutPoint.from(c.outPoint);
+        if (op.txHash === outPoint.txHash && op.index === outPoint.index) return false; // found → live
+      }
+      if (BigInt(page.cells.length) < PAGE || !page.lastCursor) return true; // exhausted, not found → spent
+      after = page.lastCursor as ccc.Hex;
+    }
+    return false; // too many cells to scan confidently → do not block
   }
 
   override getCellsCapacity = async (key: ccc.ClientIndexerSearchKeyLike): Promise<ccc.Num> => {

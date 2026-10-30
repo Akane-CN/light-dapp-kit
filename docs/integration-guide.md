@@ -24,6 +24,7 @@ the Retry button in `SyncStatus`) skips the wait. Only `reset()` wipes local dat
 | --- | --- | --- |
 | Mempool rejection feedback | immediate | delayed — poll `getTransaction` |
 | Cells of un-watched addresses | queryable | empty; hooks auto-watch |
+| Resolving a spent out point | node knows | for a watched script, `getCell` returns undefined (verified live), not a stale cell |
 | Custom type script cell deps | node has them | `client.watch(typeScript, "type")` yourself |
 | Fee estimation | `estimate_cycles` | works via light client, falls back to `defaultFeeRate` |
 
@@ -31,7 +32,7 @@ Cell sync is a linear scan of block filters from the watch start block to the
 tip. Measured in CI (GitHub-hosted runner, Chrome headless, testnet): about 600
 blocks per second, so the default 1,000-block look-back costs a couple of
 seconds, 67,000 idle blocks did not finish within 9 minutes, and a scan from
-genesis would take more than 10 hours. Always give `watch()` or
+genesis would take more than 10 hours. On reload the light client keeps its own sync progress, and the kit reconciles restored watches to it, so a refresh resumes instead of re-scanning. Always give `watch()` or
 `watchFromBlock` a start close to the wallet's first activity, and never call
 it with block 0 on a real network.
 
