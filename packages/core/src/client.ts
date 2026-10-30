@@ -44,7 +44,34 @@ export interface LightClientOptions {
  * two type graphs are structurally compatible at runtime but not assignable,
  * so values are cast once at the boundary (see `toLcTx`).
  */
-export class LightClientCccClient extends ccc.ClientPublicTestnet {
+// The data source is identical on both networks; only CCC's known-script table and address
+// prefix differ, and those come from the base class. So the implementation is a mixin applied
+// to both ClientPublicTestnet and ClientPublicMainnet, chosen per network by
+// createLightClientCccClient. (Extending only the testnet client gave mainnet users testnet
+// script hashes and ckt1 addresses.)
+/** The light-client lifecycle and watch surface the kit adds on top of ccc.Client. */
+export interface LightClientController {
+  readonly cfg: NetworkConfig;
+  readonly sync: SyncMachine;
+  readonly watches: WatchList;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  pause(): void;
+  resume(): void;
+  retry(): void;
+  reset(): Promise<void>;
+  syncState(): SyncState;
+  onSyncState(cb: (s: SyncState) => void): () => void;
+  watch(script: ccc.ScriptLike, scriptType?: "lock" | "type", fromBlock?: bigint): Promise<void>;
+  unwatch(script: ccc.ScriptLike, scriptType?: "lock" | "type"): Promise<void>;
+}
+
+function defineLightClientClass(
+  // Base is a concrete public client (testnet or mainnet, the latter passed via a structural
+  // cast since the two share the same shape); a generic base would read as abstract here.
+  Base: typeof ccc.ClientPublicTestnet,
+): new (opts: LightClientOptions) => ccc.Client & LightClientController {
+  return class LightClientCccClientImpl extends Base {
   readonly cfg: NetworkConfig;
   readonly sync = new SyncMachine();
   readonly watches = new WatchList();
@@ -475,6 +502,19 @@ export class LightClientCccClient extends ccc.ClientPublicTestnet {
   override getFeeRateStatistics = async (): Promise<{ mean: ccc.Num; median: ccc.Num }> => {
     return { mean: this.cfg.defaultFeeRate, median: this.cfg.defaultFeeRate };
   };
+  };
+}
+
+const LightClientCccClientTestnet = defineLightClientClass(ccc.ClientPublicTestnet);
+const LightClientCccClientMainnet = defineLightClientClass(ccc.ClientPublicMainnet as unknown as typeof ccc.ClientPublicTestnet);
+
+/** The light-client-backed ccc.Client; both networks share this shape. */
+export type LightClientCccClient = ccc.Client & LightClientController;
+
+/** Create a light-client-backed client on the CCC base class matching the network. */
+export function createLightClientCccClient(opts: LightClientOptions): LightClientCccClient {
+  const Cls = opts.network === "mainnet" ? LightClientCccClientMainnet : LightClientCccClientTestnet;
+  return new Cls(opts) as unknown as LightClientCccClient;
 }
 
 /** Transaction type expected by the bundled light client (its own CCC alpha). */

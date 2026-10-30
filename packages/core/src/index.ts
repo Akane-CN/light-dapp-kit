@@ -1,5 +1,5 @@
-export { LightClientCccClient } from "./client.js";
-export type { LightClientOptions } from "./client.js";
+export { createLightClientCccClient } from "./client.js";
+export type { LightClientCccClient, LightClientController, LightClientOptions } from "./client.js";
 export { SyncMachine } from "./sync.js";
 export type { SyncPhase, SyncState, SyncError, SyncRetry } from "./sync.js";
 export { DEFAULT_RETRY, backoffDelay, FailureTracker } from "./retry.js";

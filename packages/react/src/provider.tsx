@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { ccc } from "@ckb-ccc/connector-react";
-import { LightClientCccClient, type LightClientOptions } from "@light-dapp-kit/core";
+import { createLightClientCccClient, type LightClientCccClient, type LightClientOptions } from "@light-dapp-kit/core";
 
 export interface LightClientProviderProps extends LightClientOptions {
   children: ReactNode;
@@ -47,7 +47,7 @@ export function LightClientProvider({
 }: LightClientProviderProps) {
   const client = useMemo(
     () =>
-      new LightClientCccClient({
+      createLightClientCccClient({
         ...opts,
         config: {
           ...opts.config,

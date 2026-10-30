@@ -77,5 +77,8 @@ export function lastClient(): FakeLightClient {
 }
 export function resetInstances(): void { instances.length = 0; }
 
-// What the provider imports by value from the real package.
-export { FakeLightClient as LightClientCccClient };
+// What the provider imports from the real package.
+export function createLightClientCccClient(opts: { network: string; config?: Record<string, unknown> }): FakeLightClient {
+  return new FakeLightClient(opts);
+}
+export type LightClientCccClient = FakeLightClient;
