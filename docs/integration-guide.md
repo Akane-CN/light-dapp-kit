@@ -56,7 +56,9 @@ and they are not equivalent:
   `@ckb-ccc/joy-id` fails with "Popup closed". Extension wallets are unaffected.
 
 The template's `vite.config.ts` sends DIP to Chromium 137+ and COOP/COEP to everything
-else. Static hosts use `coi-serviceworker`, which currently only emits COOP/COEP.
+else. Static hosts use the bundled `coi-serviceworker.js`, which injects the same
+per-browser headers (DIP on Chromium 137+, COOP/COEP otherwise), so JoyID works on GitHub
+Pages too.
 
 Verified empirically (Chrome 153, headless): COOP/COEP → `crossOriginIsolated`
 true, JoyID opener null; DIP → `crossOriginIsolated` true, opener present;

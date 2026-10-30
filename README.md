@@ -93,11 +93,12 @@ Extension wallets (MetaMask, OKX, UniSat, UTXO Global) inject a provider and are
 unaffected either way. The header choice lives in `vite.config.ts`
 (`isolationHeaders()`), keyed on the User-Agent.
 
-Static hosts that cannot set headers (GitHub Pages) use
-[`coi-serviceworker`](https://github.com/gzuidhof/coi-serviceworker), which the
-template ships in `public/`. It only emits COOP/COEP, so on GitHub Pages JoyID
-cannot connect yet; teaching it to emit `Document-Isolation-Policy` on Chromium
-is an M3 item.
+Static hosts that cannot set headers (GitHub Pages) use the kit's own
+`coi-serviceworker.js` (in `public/`, MIT, based on
+[gzuidhof/coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker)). It
+injects the same per-browser headers: `Document-Isolation-Policy` on Chromium
+137+ (so JoyID works on Pages too) and COOP/COEP elsewhere. It no-ops when the
+page is already isolated by real headers.
 
 Desktop Chromium is the primary target for v0. Mobile browsers are out of scope.
 

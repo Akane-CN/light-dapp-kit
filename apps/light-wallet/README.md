@@ -15,4 +15,4 @@ bun run dev
 
 Switch network with `?network=mainnet`.
 
-Deploying to GitHub Pages: drop `coi-serviceworker.min.js` into `public/` (see `public/README-coi.md`), push to `main`.
+Deploying to GitHub Pages: drop `coi-serviceworker.js` into `public/` (see `public/README-coi.md`), push to `main`.
