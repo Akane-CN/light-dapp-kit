@@ -36,6 +36,13 @@ genesis would take more than 10 hours. On reload the light client keeps its own 
 `watchFromBlock` a start close to the wallet's first activity, and never call
 it with block 0 on a real network.
 
+`client.blockForDate(date, safetyBlocks?)` estimates that start with zero RPC by interpolating between the light client's genesis and tip headers (it is an estimate — see `blockForDate.ts`), and `client.watchFromDate(script, type, date, safetyBlocks?)` watches from it:
+
+```ts
+// start the wallet's lock from roughly when the user first used it
+await client.watchFromDate(lock, "lock", new Date("2024-06-01"), 10_000n);
+```
+
 Measured end to end in the same CI setup (`e2e/wallet.spec.ts`): headers synced
 in 65–90 s with 6–8 peers; the balance page reached `ready` 135–195 s after
 load with an explicit start block; a signed transfer was `pending` 2 s after

@@ -8,3 +8,5 @@ export { NETWORKS, resolveNetwork } from "./config.js";
 export type { NetworkName, NetworkConfig } from "./config.js";
 export { WatchList } from "./watch.js";
 export type { WatchEntry } from "./watch.js";
+export { estimateBlockForDate } from "./blockForDate.js";
+export type { HeaderPoint, BlockForDateInput } from "./blockForDate.js";

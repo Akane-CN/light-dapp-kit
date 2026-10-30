@@ -2,6 +2,7 @@ import { ccc } from "@ckb-ccc/core";
 import type { LightClient } from "ckb-light-client-js";
 import { buildLightClientToml, resolveNetwork, resolveWatchStart, type NetworkConfig, type NetworkName } from "./config.js";
 import { DEFAULT_RETRY, FailureTracker, backoffDelay, type RetryPolicy } from "./retry.js";
+import { estimateBlockForDate } from "./blockForDate.js";
 import { SyncMachine, type SyncState } from "./sync.js";
 import { WatchList, type WatchEntry } from "./watch.js";
 import { loadMeta, saveMeta, clearDatabases } from "./storage.js";
@@ -64,6 +65,8 @@ export interface LightClientController {
   onSyncState(cb: (s: SyncState) => void): () => void;
   watch(script: ccc.ScriptLike, scriptType?: "lock" | "type", fromBlock?: bigint): Promise<void>;
   unwatch(script: ccc.ScriptLike, scriptType?: "lock" | "type"): Promise<void>;
+  blockForDate(date: Date | number, safetyBlocks?: bigint): Promise<bigint>;
+  watchFromDate(script: ccc.ScriptLike, scriptType?: "lock" | "type", date?: Date | number, safetyBlocks?: bigint): Promise<void>;
 }
 
 function defineLightClientClass(
@@ -294,6 +297,37 @@ function defineLightClientClass(
 
   async unwatch(script: ccc.ScriptLike, scriptType: "lock" | "type" = "lock"): Promise<void> {
     if (this.watches.remove({ script, scriptType })) await this.pushScripts();
+  }
+
+  /**
+   * Estimate the block to start watching from for a date, with zero RPC, from the light
+   * client's genesis and tip headers. See blockForDate.ts for the accuracy trade-off; pass
+   * `safetyBlocks` to start earlier and avoid missing the first activity.
+   */
+  async blockForDate(date: Date | number, safetyBlocks?: bigint): Promise<bigint> {
+    if (!this.lc) await this.booted;
+    const lc = this.lc;
+    if (!lc) throw new Error("light client stopped; call start() before blockForDate()");
+    const [genesisBlock, tip] = await Promise.all([lc.getGenesisBlock(), lc.getTipHeader()]);
+    const genesis = genesisBlock.header;
+    const targetMs = BigInt(typeof date === "number" ? Math.floor(date) : date.getTime());
+    return estimateBlockForDate({
+      genesis: { number: genesis.number, timestamp: genesis.timestamp },
+      tip: { number: tip.number, timestamp: tip.timestamp },
+      targetMs,
+      safetyBlocks,
+    });
+  }
+
+  /** watch(), starting from the block estimated for `date` (see blockForDate). */
+  async watchFromDate(
+    script: ccc.ScriptLike,
+    scriptType: "lock" | "type" = "lock",
+    date: Date | number = 0,
+    safetyBlocks?: bigint,
+  ): Promise<void> {
+    const from = await this.blockForDate(date, safetyBlocks);
+    await this.watch(script, scriptType, from);
   }
 
   /** Resolves with the header tip once it is known (> 0). */
