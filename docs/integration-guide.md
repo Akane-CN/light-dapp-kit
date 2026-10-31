@@ -4,6 +4,45 @@
 
 Replace your `ccc.Provider` with `LightClientProvider`. Everything else stays.
 
+## Migration checklist (from RPC mode)
+
+A step-by-step for an existing CCC dApp. The only required steps are 1–4; the rest
+is handling the ways a light client differs from a node (detailed below).
+
+1. **Install.** `bun add @light-dapp-kit/react @light-dapp-kit/core` (they peer-depend
+   on `@ckb-ccc/core` and `@ckb-ccc/connector-react`, which you already have).
+2. **Swap the provider.** Replace `<ccc.Provider defaultClient={new ccc.ClientPublic*()}>`
+   with `<LightClientProvider network="mainnet" | "testnet">`. It builds the light-client
+   client for that network and still renders `ccc.Provider` inside, so the connector UI,
+   `ccc.useSigner()` and all transaction helpers keep working. Pick the network with the
+   prop — the client binds to the matching CCC base class (addresses and known scripts
+   follow the network).
+3. **Give a watch start block.** A light client scans block filters linearly (~600
+   blocks/s), so never start from genesis. Pass `watchFromBlock`, or let the hooks use the
+   default 1,000-block look-back, or compute one from a date with
+   `client.watchFromDate(script, type, date, safetyBlocks)`. See the cell-sync note below.
+4. **Make the page cross-origin isolated.** `SharedArrayBuffer` requires it. Use the
+   template's `vite.config.ts` `isolationHeaders()` for dev/preview and your own host; drop
+   `public/coi-serviceworker.js` in for static hosts (GitHub Pages). See *Cross-origin
+   isolation*. If you ship popup wallets (JoyID), you need the Document-Isolation-Policy
+   path, i.e. Chromium 137+.
+5. **Keep reads reactive, not one-shot.** Balances and cells update as the chain and the
+   cell tip advance. Use `useBalance` / `useLiveCells` / `useDaoDeposits` (they auto-watch
+   the lock and re-query on `sync.cellTip`) instead of a single RPC call at mount.
+6. **Expect delayed send feedback.** There is no mempool. `useSendTransaction` broadcasts
+   over P2P and polls `getTransaction` until committed; surface `pending` in the UI and do
+   not assume immediate rejection errors.
+7. **Watch custom type scripts yourself.** The light client only indexes watched scripts.
+   For assets under a custom type script, `client.watch(typeScript, "type")` (xUDT via a
+   hook is on the roadmap).
+8. **Drop assumptions about node-only RPCs.** `getBlockByNumber` / `getHeaderByNumber` /
+   `get_live_cell` are not available and throw `UNSUPPORTED`; fee statistics fall back to
+   the configured default rate. Audit any direct `client.*` calls your app made.
+9. **Show sync state.** Drop in `SyncStatus`, or read `useLightClient().sync`, so users see
+   `syncing-headers` / `syncing-cells` / `ready` and can retry after an `error`.
+10. **Verify zero RPC.** Open DevTools → Network and confirm no JSON-RPC POSTs, only a
+    `wss://` P2P socket. `e2e/no-rpc.spec.ts` asserts exactly this in headless Chromium.
+
 ## Loading and recovery
 
 `@light-dapp-kit/core` imports `ckb-light-client-js` (the ~10 MB WASM + workers)
