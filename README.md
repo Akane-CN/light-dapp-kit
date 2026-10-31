@@ -1,5 +1,7 @@
 # Light dApp Kit
 
+[![CI](https://github.com/Akane-CN/light-dapp-kit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Akane-CN/light-dapp-kit/actions/workflows/ci.yml)
+
 Run the official CKB light client **inside the browser** and plug it into any
 [CCC](https://github.com/ckb-devrel/ccc) dApp — no RPC server, no indexer, no backend.
 
@@ -82,16 +84,32 @@ skips itself when the secret is absent. Keep nothing but faucet CKB on that key.
 ## Browser requirements
 
 `ckb-light-client-js` uses `SharedArrayBuffer`, so the page must be
-cross-origin isolated. How that is achieved matters for wallets:
+cross-origin isolated. How that is achieved decides whether popup wallets work.
 
-| Browser | Header sent by Vite dev/preview | Light client | Popup wallets (JoyID) |
+### Support matrix
+
+| Browser | Light client (sync, balance, send) | Popup wallets (JoyID) | Extension wallets (MetaMask, OKX, UniSat, UTXO Global) |
 | --- | --- | --- | --- |
-| Chromium 137+ (Chrome, Edge, Brave) | `Document-Isolation-Policy: isolate-and-require-corp` | works | work: the popup keeps `window.opener` |
-| Firefox, Safari, older Chromium | `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` | works | fail with "Popup closed": COOP severs the opener of cross-origin popups |
+| Chrome / Edge / Brave 137+ | Yes, in CI | Yes | Yes |
+| Chrome / Edge / Brave < 137 | Yes | No — COOP severs the popup's opener | Yes |
+| Firefox (latest) | Expected, not in CI | No — same reason | Yes |
+| Safari | Untested, not a v0 target | No | Untested |
+| Mobile browsers | Out of scope | — | — |
 
-Extension wallets (MetaMask, OKX, UniSat, UTXO Global) inject a provider and are
-unaffected either way. The header choice lives in `vite.config.ts`
-(`isolationHeaders()`), keyed on the User-Agent.
+"Yes, in CI" means the e2e suite exercises it in headless Chromium on every run; the other
+rows are inferred from the isolation mechanism, since CI only runs Chromium. Desktop Chromium
+is the primary target for v0; the Safari row reflects known IndexedDB-in-Worker differences
+that are out of scope. Extension wallets inject a provider and are unaffected by the popup
+limitation.
+
+### How isolation is achieved
+
+| Browser | Header sent by Vite dev/preview and the service worker | Popup wallets |
+| --- | --- | --- |
+| Chromium 137+ | `Document-Isolation-Policy: isolate-and-require-corp` | keep `window.opener` |
+| Firefox, Safari, older Chromium | `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` | lose the opener (cross-origin popup "Popup closed") |
+
+The header choice lives in `vite.config.ts` (`isolationHeaders()`), keyed on the User-Agent.
 
 Static hosts that cannot set headers (GitHub Pages) use the kit's own
 `coi-serviceworker.js` (in `public/`, MIT, based on
@@ -99,8 +117,6 @@ Static hosts that cannot set headers (GitHub Pages) use the kit's own
 injects the same per-browser headers: `Document-Isolation-Policy` on Chromium
 137+ (so JoyID works on Pages too) and COOP/COEP elsewhere. It no-ops when the
 page is already isolated by real headers.
-
-Desktop Chromium is the primary target for v0. Mobile browsers are out of scope.
 
 ## Status
 
