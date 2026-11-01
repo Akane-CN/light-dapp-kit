@@ -35,6 +35,9 @@ bun run dev:wallet      # http://localhost:5173
 3. There must be **zero** HTTP JSON-RPC requests; only `wss://` P2P sockets.
    `bun run e2e` asserts exactly this in headless Chrome.
 
+For a one-page reviewer summary of every check, what it proves, how to re-run it, and the
+measured numbers, see [docs/how-to-verify.md](docs/how-to-verify.md).
+
 ### Automated wallet flow (testnet)
 
 `e2e/wallet.spec.ts` drives the Balance, Nervos DAO and Send pages with a
