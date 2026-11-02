@@ -123,4 +123,6 @@ page is already isolated by real headers.
 
 ## Status
 
-Spark Program (CKB Eco Fund) proposal — see `docs/`. MIT.
+Spark Program (CKB Eco Fund) project. Proposal and design doc:
+[docs/spark-proposal.md](docs/spark-proposal.md),
+[docs/design-doc.md](docs/design-doc.md) (zh-CN). MIT.
